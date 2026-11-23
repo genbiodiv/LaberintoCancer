@@ -188,6 +188,8 @@ export default function App() {
 
   const handleResume = () => {
     if (!session) return;
+    setPendingResolution(null);
+    setStageTab(playMode === 'labyrinth' ? 'labyrinth' : 'network');
     setView(session.finished ? 'report' : 'playing');
   };
 
@@ -321,7 +323,7 @@ export default function App() {
 
       {view === 'playing' && session && playMode === 'labyrinth' && (
         <div
-          className="h-screen w-screen bg-slate-950 overflow-hidden relative"
+          className="h-screen h-[100dvh] w-screen bg-slate-950 overflow-hidden relative"
           data-state="playing"
           data-mode={session.mode}
           data-play-mode="labyrinth"
@@ -332,6 +334,7 @@ export default function App() {
             molecularDetail={molecularDetail}
             isExpanded={true}
             onBackHome={() => setView('start')}
+            onSwitchToText={() => handlePlayModeChange('text')}
             onResolveCancerTurn={handleCancerTurn}
             onResolveOncologistTurn={handleOncologistTurn}
             onRunDiagnostic={handleRunDiagnostic}

@@ -3,10 +3,14 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
   Activity,
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   Compass,
+  DoorOpen,
   Eye,
+  Gamepad2,
   Lock,
   Maximize2,
   Minimize2,
@@ -89,6 +93,7 @@ interface Labyrinth3DViewProps {
   isExpanded: boolean;
   onToggleExpand?: () => void;
   onBackHome?: () => void;
+  onSwitchToText?: () => void;
   onResolveCancerTurn: (strategyId: string, predictionId: string) => void;
   onResolveOncologistTurn: (therapyId: TherapyId, predictionId: string) => void;
   onRunDiagnostic: (toolId: DiagnosticToolId) => string | null;
@@ -155,12 +160,16 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   isExpanded,
   onToggleExpand,
   onBackHome,
+  onSwitchToText,
   onResolveCancerTurn,
   onResolveOncologistTurn,
   onRunDiagnostic,
 }) => {
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<LabyrinthAudio | null>(null);
+  const didInitialBuildRef = useRef<boolean>(false);
+  const virtualKeysRef = useRef<Set<string>>(new Set());
 
   const [cameraMode, setCameraMode] = useState<CameraMode>('first_person');
   const [zoomLevel, setZoomLevel] = useState<number>(LABYRINTH_ZOOM_DEFAULT);
@@ -181,7 +190,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   const [diagToast, setDiagToast] = useState<string | null>(null);
   const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
   const [contextLost, setContextLost] = useState<boolean>(false);
+  const [webglUnavailable, setWebglUnavailable] = useState<boolean>(false);
+  const [webglRetryNonce, setWebglRetryNonce] = useState<number>(0);
   const [motionSensorActive, setMotionSensorActive] = useState<boolean>(false);
+  const [showTouchPad, setShowTouchPad] = useState<boolean>(false);
 
   // Mobile DeviceOrientation motion sensor refs (zero React re-renders inside sensor events)
   const motionActiveRef = useRef<boolean>(false);
@@ -365,7 +377,6 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   }, [motionSensorActive]);
 
   const handleToggleMotionSensor = useCallback(async () => {
-    audioRef.current?.ensureAmbientStarted();
     if (motionSensorActive) {
       setMotionSensorActive(false);
       setDiagToast('Sensor de movimiento desactivado');
@@ -373,12 +384,14 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     }
 
     if (typeof window === 'undefined' || !('DeviceOrientationEvent' in window)) {
+      setShowTouchPad(true);
       setDiagToast(
-        'Sensor de movimiento no disponible en este navegador. Usa las flechas ↑ ↓ ← → o arrastra.'
+        'Giroscopio no disponible en este navegador. Controles direccionales activados en pantalla.'
       );
       return;
     }
 
+    // Request iOS Safari permission FIRST inside the click gesture before touching AudioContext
     const devOrient = window.DeviceOrientationEvent as unknown as {
       requestPermission?: () => Promise<'granted' | 'denied'>;
     };
@@ -386,17 +399,22 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       try {
         const result = await devOrient.requestPermission();
         if (result !== 'granted') {
+          setShowTouchPad(true);
           setDiagToast(
-            'Permiso de sensor denegado. Puedes moverte arrastrando la pantalla o con flechas.'
+            'Permiso de giroscopio bloqueado. Controles direccionales activados en pantalla.'
           );
           return;
         }
       } catch {
-        setDiagToast('No se pudo activar el sensor de movimiento en este dispositivo.');
+        setShowTouchPad(true);
+        setDiagToast(
+          'No se pudo activar el giroscopio aquí. Controles direccionales activados en pantalla.'
+        );
         return;
       }
     }
 
+    audioRef.current?.ensureAmbientStarted();
     motionCalibrationRef.current = null;
     motionReceivedReadingRef.current = false;
     setMotionSensorActive(true);
@@ -409,6 +427,33 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     motionCalibrationRef.current = createMotionCalibration(beta, gamma);
     setDiagToast('Posición neutra del sensor recalibrada');
   }, [motionSensorActive]);
+
+  const bindVirtualKey = useCallback((token: string) => {
+    const press = (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      audioRef.current?.ensureAmbientStarted();
+      virtualKeysRef.current.add(token);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore pointer capture errors on synthetic events
+      }
+    };
+    const release = (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      virtualKeysRef.current.delete(token);
+    };
+    return {
+      onPointerDown: press,
+      onPointerUp: release,
+      onPointerCancel: release,
+      onLostPointerCapture: () => {
+        virtualKeysRef.current.delete(token);
+      },
+    };
+  }, []);
 
   // Rebuild world geometry inside the persistent Three.js scene when layout/mode/theme/severity changes
   const rebuildWorld = useCallback(
@@ -670,20 +715,50 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     []
   );
 
-  // Initialize Three.js renderer ONCE on mount
+  // Initialize Three.js renderer ONCE on mount (with 2-tier WebGL fallback so it never crashes)
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
 
+    didInitialBuildRef.current = false;
+    setWebglUnavailable(false);
+    setContextLost(false);
     audioRef.current = new LabyrinthAudio();
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true, // Sharp edges in Media/Alta/Ultra while Baja keeps pixelated buffer
-      powerPreference: 'high-performance',
-      alpha: false,
-      preserveDrawingBuffer: true, // Prevents blank frames between software-WebGL paced ticks
-    });
+    let renderer: THREE.WebGLRenderer | null = null;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: 'high-performance',
+        alpha: false,
+        preserveDrawingBuffer: true,
+      });
+    } catch {
+      try {
+        renderer = new THREE.WebGLRenderer({
+          antialias: false,
+          powerPreference: 'default',
+          alpha: false,
+        });
+      } catch {
+        setWebglUnavailable(true);
+        return () => {
+          audioRef.current?.dispose();
+          audioRef.current = null;
+        };
+      }
+    }
+
     const gl = renderer.getContext();
+    if (!gl) {
+      renderer.dispose();
+      setWebglUnavailable(true);
+      return () => {
+        audioRef.current?.dispose();
+        audioRef.current = null;
+      };
+    }
+
     const isSoftwareGl = detectSoftwareWebGL(gl);
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -706,16 +781,23 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
 
     const scene = new THREE.Scene();
 
-    // Soft studio PMREM environment on hardware GPUs (skipped on CPU software WebGL for instant first-frame startup)
+    // Soft studio PMREM environment on hardware GPUs (guarded so GPU quirks never abort startup)
     let envRT: THREE.WebGLRenderTarget | null = null;
     if (!isSoftwareGl) {
-      const pmrem = new THREE.PMREMGenerator(renderer);
-      const roomEnv = new RoomEnvironment();
-      envRT = pmrem.fromScene(roomEnv, 0.04);
-      scene.environment = envRT.texture;
-      roomEnv.dispose();
-      pmrem.dispose();
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        const roomEnv = new RoomEnvironment();
+        envRT = pmrem.fromScene(roomEnv, 0.04);
+        scene.environment = envRT.texture;
+        roomEnv.dispose();
+        pmrem.dispose();
+      } catch {
+        envRT = null;
+      }
     }
+
+    // Focus stage container cleanly so desktop arrow keys respond immediately inside iframes
+    stageRef.current?.focus({ preventScroll: true });
 
     // Camera positioned at spawn looking straight north (-Z) toward the glowing forking portals
     const camera = new THREE.PerspectiveCamera(64, 16 / 9, 0.1, 140);
@@ -962,12 +1044,16 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     window.addEventListener('blur', clearKeys);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Pointer drag-look & raycast click on portals / diagnostic terminals
+    // Pointer drag-look, touch walk-drag & raycast click/tap on portals / diagnostic terminals
     const raycaster = new THREE.Raycaster();
     const pointerNdc = new THREE.Vector2();
     let isDragging = false;
+    let activePointerId: number | null = null;
     let dragMoved = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
     let lastPointerX = 0;
+    let lastPointerY = 0;
 
     const getHitObject = (clientX: number, clientY: number): THREE.Object3D | null => {
       const ctx = threeRef.current;
@@ -982,24 +1068,53 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     };
 
     const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      stageRef.current?.focus({ preventScroll: true });
       audioRef.current?.ensureAmbientStarted();
       isDragging = true;
+      activePointerId = e.pointerId;
       dragMoved = false;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
       lastPointerX = e.clientX;
+      lastPointerY = e.clientY;
     };
 
     const onPointerMove = (e: PointerEvent) => {
       if (isDragging) {
+        if (activePointerId !== null && e.pointerId !== activePointerId) return;
         const dx = e.clientX - lastPointerX;
-        if (Math.abs(dx) > 2) dragMoved = true;
+        const dy = e.clientY - lastPointerY;
+        const totalMove = Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY);
+        const dragThreshold = e.pointerType === 'touch' ? 12 : 5;
+        if (totalMove > dragThreshold) dragMoved = true;
         lastPointerX = e.clientX;
-        if (cameraModeRef.current === 'first_person') {
-          playerRef.current.yaw -= dx * 0.0045;
+        lastPointerY = e.clientY;
+        if (dragMoved && !selectedPortalRef.current) {
+          if (cameraModeRef.current === 'first_person') {
+            playerRef.current.yaw -= dx * 0.0045;
+            // On touchscreens, dragging vertically also glides smoothly forward/backward
+            if (e.pointerType === 'touch' && Math.abs(dy) > 0.5) {
+              const p = playerRef.current;
+              const step = dy * 0.022;
+              const fwdX = -Math.sin(p.yaw);
+              const fwdZ = -Math.cos(p.yaw);
+              const resolved = resolvePlayerMovement(
+                p.x,
+                p.z,
+                fwdX * step,
+                fwdZ * step,
+                layoutRef.current.walkableBoxes
+              );
+              p.x = resolved.x;
+              p.z = resolved.z;
+            }
+          }
         }
         return;
       }
 
+      if (e.pointerType === 'touch') return;
       const hit = getHitObject(e.clientX, e.clientY);
       if (hit?.userData?.kind === 'portal') {
         const portal = layoutRef.current.portals.find((p) => p.id === hit.userData.portalId);
@@ -1017,11 +1132,19 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       }
     };
 
+    const onPointerCancel = () => {
+      isDragging = false;
+      activePointerId = null;
+      dragMoved = false;
+    };
+
     const onPointerUp = (e: PointerEvent) => {
       // Only handle pointerups that originated on the 3D canvas (prevents HUD/modal click-through)
       if (!isDragging) return;
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
       const wasDrag = dragMoved;
       isDragging = false;
+      activePointerId = null;
       dragMoved = false;
       if (wasDrag) return;
 
@@ -1062,6 +1185,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     canvas.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
 
     // Pre-allocated vectors/matrices for zero-GC animation loop
     const _camTargetPos = new THREE.Vector3();
@@ -1126,14 +1250,19 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       const ctx = threeRef.current;
 
       if (ctx) {
-        // 1. Combined desktop arrow/WASD + mobile DeviceOrientation motion sensor controls
-        const kbInput = computeKeyboardControlInput(heldKeys, cameraModeRef.current);
+        // 1. Combined desktop arrow/WASD + touch pad + mobile DeviceOrientation controls
+        // Pause walking while a door confirmation modal is open
+        const combinedKeys = new Set<string>(heldKeys);
+        virtualKeysRef.current.forEach((k) => combinedKeys.add(k));
+        const kbInput = selectedPortalRef.current
+          ? { moveForward: 0, moveRight: 0, turnDelta: 0 }
+          : computeKeyboardControlInput(combinedKeys, cameraModeRef.current);
         const screenAngle =
           typeof window !== 'undefined' && typeof window.screen?.orientation?.angle === 'number'
             ? window.screen.orientation.angle
             : 0;
         const motionInput =
-          motionActiveRef.current && motionCalibrationRef.current
+          !selectedPortalRef.current && motionActiveRef.current && motionCalibrationRef.current
             ? computeMotionControlInput(
                 motionOrientationRef.current,
                 motionCalibrationRef.current,
@@ -1375,6 +1504,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       canvas.removeEventListener('wheel', onWheel);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
 
@@ -1388,13 +1518,23 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       sporeMat.dispose();
       if (envRT) envRT.dispose();
       renderer.dispose();
+      try {
+        renderer.forceContextLoss();
+      } catch {
+        // Ignore if context already lost
+      }
       audioRef.current?.dispose();
       threeRef.current = null;
+      virtualKeysRef.current.clear();
     };
-  }, [rebuildWorld]);
+  }, [rebuildWorld, webglRetryNonce]);
 
   // Rebuild labyrinth chambers/portals/aesthetics/severity without losing player pose
   useEffect(() => {
+    if (!didInitialBuildRef.current) {
+      didInitialBuildRef.current = true;
+      return;
+    }
     rebuildWorld(layout, state.mode, theme, resolutionPreset.smoothTextures, severity);
     if (threeRef.current) {
       threeRef.current.renderer.render(threeRef.current.scene, threeRef.current.camera);
@@ -1489,9 +1629,16 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   const toMapY = (wz: number) =>
     mapHeight / 2 + (wz - (layout.bounds.minZ + layout.bounds.maxZ) / 2) * mapScale;
 
+  const activeFallbackPortals = useMemo(
+    () => layout.portals.filter((p) => p.status === 'active'),
+    [layout.portals]
+  );
+
   return (
     <div
-      className="relative w-full h-full bg-slate-950 select-none overflow-hidden"
+      ref={stageRef}
+      tabIndex={-1}
+      className="relative w-full h-full bg-slate-950 select-none overflow-hidden outline-none"
       data-testid="labyrinth-3d-stage"
       data-labyrinth-round={state.currentRound}
       data-labyrinth-mode={state.mode}
@@ -1506,6 +1653,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       data-low-res={resolutionLevel === 'low' ? 'true' : 'false'}
       data-resolution-level={resolutionLevel}
       data-motion-sensor={motionSensorActive ? 'active' : 'off'}
+      data-webgl-fallback={webglUnavailable ? 'true' : 'false'}
       data-player-x={playerPose.x.toFixed(2)}
       data-player-z={playerPose.z.toFixed(2)}
       data-player-yaw={playerPose.yaw.toFixed(2)}
@@ -1514,6 +1662,86 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     >
       {/* Isolated WebGL Canvas Mount (touch-none ensures smooth mobile drag without page scroll) */}
       <div ref={mountRef} className="w-full h-full touch-none" />
+
+      {/* Resilient Interactive Chamber Fallback when WebGL is unavailable on a device/browser */}
+      {webglUnavailable && (
+        <div
+          data-testid="labyrinth-webgl-fallback"
+          className="absolute inset-0 bg-gradient-to-b from-slate-950 via-[#11192c] to-slate-950 flex flex-col items-center justify-center p-6 pt-36 pb-20 text-slate-100 overflow-y-auto"
+        >
+          <div className="max-w-3xl w-full space-y-5 text-center">
+            <div className="space-y-1">
+              <p className="text-xs font-mono text-sky-400">
+                Vista arquitectónica compatible · Cámara {state.currentRound}
+              </p>
+              <h2 className="text-xl sm:text-2xl font-bold text-white">
+                Elige una puerta para continuar el recorrido
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-400 max-w-xl mx-auto">
+                Tu navegador restringió la aceleración WebGL 3D, pero puedes recorrer todas las
+                puertas del laberinto normalmente desde aquí.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {activeFallbackPortals.map((portal) => (
+                <button
+                  key={portal.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPortal(portal);
+                    setDoorOpenNonce((n) => n + 1);
+                    setSelectedPredictionId('');
+                  }}
+                  className="group rounded-xl border bg-slate-900/90 hover:bg-slate-800/95 p-5 text-left transition-colors flex flex-col justify-between gap-4 cursor-pointer"
+                  style={{ borderColor: portal.accentCss }}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-mono text-slate-300">
+                      <DoorOpen
+                        className="w-4 h-4 shrink-0"
+                        style={{ color: portal.accentCss }}
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">{portal.sublabel}</span>
+                    </div>
+                    <div className="text-base font-bold text-white leading-snug">
+                      {portal.label}
+                    </div>
+                  </div>
+                  <div
+                    className="text-xs font-semibold inline-flex items-center gap-1"
+                    style={{ color: portal.accentCss }}
+                  >
+                    <span>Explorar puerta</span>
+                    <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setWebglRetryNonce((n) => n + 1)}
+                className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-100 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+                Reintentar vista 3D
+              </button>
+              {onSwitchToText && (
+                <button
+                  type="button"
+                  onClick={onSwitchToText}
+                  className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white cursor-pointer"
+                >
+                  Abrir en Modo Texto
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Peripheral crimson urgency vignette at high/critical cancer severity (pure CSS, no backdrop-filter) */}
       {severity.vignetteOpacity > 0 && (
@@ -1813,15 +2041,65 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         </div>
       )}
 
+      {/* Optional Hold-to-Move Directional Pad (compact, bottom-right above dock, zero decision shortcuts) */}
+      {showTouchPad && !webglUnavailable && !selectedPortal && (
+        <div
+          role="group"
+          aria-label="Controles direccionales en pantalla"
+          data-testid="labyrinth-touch-pad"
+          className="absolute bottom-20 sm:bottom-16 right-3 z-10 grid grid-cols-3 gap-1 bg-slate-950/90 border border-slate-700/90 rounded-xl p-1.5 touch-none select-none"
+        >
+          <div />
+          <button
+            type="button"
+            aria-label="Avanzar"
+            data-testid="pad-up-btn"
+            {...bindVirtualKey('ArrowUp')}
+            className="w-10 h-10 rounded-lg bg-slate-800/95 active:bg-sky-600 text-slate-100 flex items-center justify-center cursor-pointer"
+          >
+            <ArrowUp className="w-4 h-4" aria-hidden="true" />
+          </button>
+          <div />
+          <button
+            type="button"
+            aria-label="Girar a la izquierda"
+            data-testid="pad-left-btn"
+            {...bindVirtualKey('ArrowLeft')}
+            className="w-10 h-10 rounded-lg bg-slate-800/95 active:bg-sky-600 text-slate-100 flex items-center justify-center cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="Retroceder"
+            data-testid="pad-down-btn"
+            {...bindVirtualKey('ArrowDown')}
+            className="w-10 h-10 rounded-lg bg-slate-800/95 active:bg-sky-600 text-slate-100 flex items-center justify-center cursor-pointer"
+          >
+            <ArrowDown className="w-4 h-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="Girar a la derecha"
+            data-testid="pad-right-btn"
+            {...bindVirtualKey('ArrowRight')}
+            className="w-10 h-10 rounded-lg bg-slate-800/95 active:bg-sky-600 text-slate-100 flex items-center justify-center cursor-pointer"
+          >
+            <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
       {/* Compact Bottom-Right Control Dock (wraps cleanly on narrow mobile screens; single row on desktop) */}
       <div className="absolute bottom-3 left-2 right-2 sm:left-3 sm:right-3 flex items-center justify-end gap-2 pointer-events-none">
-        {/* Camera / Sensor / Zoom / Resolution / Sound / Optional Expand Toggles */}
+        {/* Camera / Sensor / Directional Pad / Zoom / Resolution / Sound / Optional Expand Toggles */}
         <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-0.5 max-w-full bg-slate-950/92 border border-slate-700/90 rounded-lg p-1 text-[11px] text-slate-200">
           <button
             type="button"
-            onClick={() =>
-              setCameraMode((prev) => (prev === 'first_person' ? 'aerial' : 'first_person'))
-            }
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setCameraMode((prev) => (prev === 'first_person' ? 'aerial' : 'first_person'));
+            }}
             className="px-2 py-1 rounded hover:bg-slate-800 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
             title="Cambiar cámara (tecla V)"
           >
@@ -1829,15 +2107,18 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             <span>{cameraMode === 'first_person' ? 'Aérea' : '1ª Pers.'}</span>
           </button>
 
-          {/* Mobile Motion Sensor Toggle + Quick Recalibrate */}
+          {/* Mobile Motion Sensor Toggle + Quick Recalibrate + On-Screen Arrow Pad Toggle */}
           <div
             role="group"
-            aria-label="Sensor de movimiento móvil"
+            aria-label="Controles de movimiento móvil"
             className="flex items-center gap-0.5 px-1 border-l border-slate-800"
           >
             <button
               type="button"
-              onClick={() => void handleToggleMotionSensor()}
+              onClick={(e) => {
+                e.currentTarget.blur();
+                void handleToggleMotionSensor();
+              }}
               aria-pressed={motionSensorActive}
               data-testid="motion-sensor-btn"
               className={`px-2 py-1 rounded inline-flex items-center gap-1 cursor-pointer whitespace-nowrap transition-colors ${
@@ -1853,7 +2134,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             {motionSensorActive && (
               <button
                 type="button"
-                onClick={handleRecalibrateMotionSensor}
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  handleRecalibrateMotionSensor();
+                }}
                 aria-label="Recalibrar sensor de movimiento"
                 data-testid="motion-recalibrate-btn"
                 className="p-1 rounded hover:bg-slate-800 text-sky-300 cursor-pointer"
@@ -1862,6 +2146,24 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
                 <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setShowTouchPad((prev) => !prev);
+              }}
+              aria-pressed={showTouchPad}
+              aria-label="Mostrar u ocultar controles direccionales en pantalla"
+              data-testid="toggle-touchpad-btn"
+              className={`p-1 rounded cursor-pointer transition-colors ${
+                showTouchPad
+                  ? 'bg-sky-600 text-white hover:bg-sky-500'
+                  : 'hover:bg-slate-800 text-slate-300'
+              }`}
+              title="Flechas direccionales en pantalla"
+            >
+              <Gamepad2 className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
           </div>
 
           {/* Zoom In / Zoom Out Control */}

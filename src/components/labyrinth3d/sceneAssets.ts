@@ -925,17 +925,21 @@ export class LabyrinthAudio {
 
   private ensureContext(): AudioContext | null {
     if (this.muted || typeof window === 'undefined') return null;
-    if (!this.ctx) {
-      const AudioCtor =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtor) return null;
-      this.ctx = new AudioCtor();
+    try {
+      if (!this.ctx) {
+        const AudioCtor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtor) return null;
+        this.ctx = new AudioCtor();
+      }
+      if (this.ctx.state === 'suspended') {
+        void this.ctx.resume().catch(() => {});
+      }
+      return this.ctx;
+    } catch {
+      return null;
     }
-    if (this.ctx.state === 'suspended') {
-      void this.ctx.resume().catch(() => {});
-    }
-    return this.ctx;
   }
 
   public setMuted(nextMuted: boolean): void {
