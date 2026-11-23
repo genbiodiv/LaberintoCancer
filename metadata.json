@@ -1,0 +1,6 @@
+{
+  "name": "GenCircuit: Evolución y control del cáncer",
+  "description": "Simulador estratégico educativo de biología molecular, evolución clonal y oncología clínica basado en COSMIC Hallmarks of Cancer y Hanahan (2026).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

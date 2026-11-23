@@ -1,0 +1,1831 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import {
+  Activity,
+  ArrowLeft,
+  ArrowRight,
+  Compass,
+  Eye,
+  Lock,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Monitor,
+  Plus,
+  Volume2,
+  VolumeX,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
+import { getTherapyById } from '../engine/knowledgeBase';
+import { computeDestinationProgress } from '../engine/destinationMetrics';
+import {
+  CancerSeverityMetrics,
+  clampLabyrinthZoom,
+  computeAerialZoomDistanceScale,
+  computeCancerSeverityMetrics,
+  computeLabyrinthCameraFov,
+  computeLabyrinthRenderBuffer,
+  getLabyrinthResolutionPreset,
+  getLabyrinthTheme,
+  LABYRINTH_ZOOM_DEFAULT,
+  LABYRINTH_ZOOM_MAX,
+  LABYRINTH_ZOOM_MIN,
+  LabyrinthResolutionLevel,
+  LabyrinthVisualTheme,
+  stepLabyrinthResolution,
+  stepLabyrinthZoom,
+} from '../engine/labyrinthAesthetics';
+import {
+  buildLabyrinthLayout,
+  findNearbyActivePortal,
+  LabyrinthLayout,
+  LabyrinthPortal,
+  resolvePlayerMovement,
+} from '../engine/labyrinthLayout';
+import {
+  formatBiologyText,
+  getTherapyDisplayName,
+} from '../engine/molecularAbstraction';
+import { getActiveRoundOffer, shuffleRandom } from '../engine/progressionEngine';
+import { evaluatePredictionGate } from '../engine/simulator';
+import {
+  DiagnosticToolId,
+  MolecularDetailMode,
+  SimulationState,
+  TherapyId,
+} from '../engine/types';
+import {
+  BioGrowthRig,
+  createChamberTotemGroup,
+  createDestinationBeaconGroup,
+  createDiagnosticConsoleGroup,
+  createForkPortalGroup,
+  createProceduralTexturePack,
+  createSeverityBioGrowths,
+  DestinationBeaconRig,
+  DiagnosticRig,
+  LabyrinthAudio,
+  PortalRig,
+  ProceduralTexturePack,
+  TotemRig,
+} from './labyrinth3d/sceneAssets';
+
+interface Labyrinth3DViewProps {
+  state: SimulationState;
+  molecularDetail: MolecularDetailMode;
+  isExpanded: boolean;
+  onToggleExpand?: () => void;
+  onBackHome?: () => void;
+  onResolveCancerTurn: (strategyId: string, predictionId: string) => void;
+  onResolveOncologistTurn: (therapyId: TherapyId, predictionId: string) => void;
+  onRunDiagnostic: (toolId: DiagnosticToolId) => string | null;
+}
+
+type CameraMode = 'first_person' | 'aerial';
+
+interface ParticleSlot {
+  active: boolean;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  life: number;
+  maxLife: number;
+  colorHex: number;
+}
+
+interface SporeSlot {
+  ox: number;
+  oz: number;
+  y: number;
+  speed: number;
+  driftPhase: number;
+  baseScale: number;
+}
+
+function detectSoftwareWebGL(gl: WebGLRenderingContext | WebGL2RenderingContext): boolean {
+  try {
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    if (!ext) return false;
+    const rendererStr = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) ?? '').toLowerCase();
+    return /swiftshader|llvmpipe|softpipe|mesa offscreen|lavapipe/.test(rendererStr);
+  } catch {
+    return false;
+  }
+}
+
+function disposeObjectTree(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry) {
+      mesh.geometry.dispose();
+    }
+    const mat = (mesh as { material?: THREE.Material | THREE.Material[] }).material;
+    if (mat) {
+      const mats = Array.isArray(mat) ? mat : [mat];
+      for (const m of mats) {
+        const map = (m as THREE.MeshStandardMaterial).map;
+        if (map && map.userData?.ownedBySprite) {
+          map.dispose();
+        }
+        m.dispose();
+      }
+    }
+  });
+}
+
+export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
+  state,
+  molecularDetail,
+  isExpanded,
+  onToggleExpand,
+  onBackHome,
+  onResolveCancerTurn,
+  onResolveOncologistTurn,
+  onRunDiagnostic,
+}) => {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef<LabyrinthAudio | null>(null);
+
+  const [cameraMode, setCameraMode] = useState<CameraMode>('first_person');
+  const [zoomLevel, setZoomLevel] = useState<number>(LABYRINTH_ZOOM_DEFAULT);
+  const [resolutionLevel, setResolutionLevel] = useState<LabyrinthResolutionLevel>('high');
+  const [renderBufferDims, setRenderBufferDims] = useState<{ w: number; h: number }>({
+    w: 0,
+    h: 0,
+  });
+  const [muted, setMuted] = useState<boolean>(false);
+  const [selectedPortal, setSelectedPortal] = useState<LabyrinthPortal | null>(null);
+  const [doorOpenNonce, setDoorOpenNonce] = useState<number>(0);
+  const [selectedPredictionId, setSelectedPredictionId] = useState<string>('');
+  const [doorLockState, setDoorLockState] = useState<{
+    portalId: string;
+    feedback: string;
+    rejectedIds: string[];
+  } | null>(null);
+  const [diagToast, setDiagToast] = useState<string | null>(null);
+  const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
+  const [contextLost, setContextLost] = useState<boolean>(false);
+
+  // Minimap player telemetry (throttled ~12Hz so React stays ultra-light)
+  const [playerPose, setPlayerPose] = useState<{ x: number; z: number; yaw: number }>({
+    x: 0,
+    z: 8,
+    yaw: 0,
+  });
+
+  const destination = useMemo(() => computeDestinationProgress(state), [state]);
+  const severity = useMemo(
+    () => computeCancerSeverityMetrics(state.clinical.tumorBurden),
+    [state.clinical.tumorBurden]
+  );
+  const theme = useMemo(
+    () => getLabyrinthTheme(state.mode, destination.progress, state.clinical.tumorBurden),
+    [state.mode, destination.progress, state.clinical.tumorBurden]
+  );
+  const layout: LabyrinthLayout = useMemo(
+    () => buildLabyrinthLayout(state, molecularDetail),
+    [state, molecularDetail]
+  );
+  const currentRoundDef = useMemo(() => getActiveRoundOffer(state), [state]);
+
+  // Mutable refs for the WebGL loop so React state changes never recreate the renderer
+  const layoutRef = useRef<LabyrinthLayout>(layout);
+  layoutRef.current = layout;
+
+  const modeRef = useRef(state.mode);
+  modeRef.current = state.mode;
+
+  const severityRef = useRef<CancerSeverityMetrics>(severity);
+  severityRef.current = severity;
+
+  const themeRef = useRef<LabyrinthVisualTheme>(theme);
+  themeRef.current = theme;
+
+  const cameraModeRef = useRef<CameraMode>(cameraMode);
+  cameraModeRef.current = cameraMode;
+
+  const zoomLevelRef = useRef<number>(zoomLevel);
+  zoomLevelRef.current = zoomLevel;
+
+  const resolutionPreset = useMemo(
+    () => getLabyrinthResolutionPreset(resolutionLevel),
+    [resolutionLevel]
+  );
+
+  const resolutionLevelRef = useRef<LabyrinthResolutionLevel>(resolutionLevel);
+  resolutionLevelRef.current = resolutionLevel;
+
+  const smoothTexturesRef = useRef<boolean>(resolutionPreset.smoothTextures);
+  smoothTexturesRef.current = resolutionPreset.smoothTextures;
+
+  const selectedPortalRef = useRef<LabyrinthPortal | null>(selectedPortal);
+  selectedPortalRef.current = selectedPortal;
+
+  const onRunDiagnosticRef = useRef(onRunDiagnostic);
+  onRunDiagnosticRef.current = onRunDiagnostic;
+
+  // Player kinematic ref (world position + orientation)
+  const playerRef = useRef({
+    x: layout.spawn.x,
+    z: layout.spawn.z,
+    yaw: layout.spawn.yaw,
+    bobPhase: 0,
+    stepAccum: 0,
+    lastNearPortalId: null as string | null,
+    roundKey: `${state.runId}-${state.mode}-${state.currentRound}`,
+  });
+
+  // Scene graph refs owned by the WebGL lifecycle
+  const threeRef = useRef<{
+    renderer: THREE.WebGLRenderer;
+    scene: THREE.Scene;
+    camera: THREE.PerspectiveCamera;
+    worldGroup: THREE.Group;
+    hemi: THREE.HemisphereLight;
+    keyLight: THREE.DirectionalLight;
+    headlamp: THREE.PointLight;
+    textures: ProceduralTexturePack | null;
+    portalRigs: PortalRig[];
+    totemRigs: TotemRig[];
+    diagnosticRigs: DiagnosticRig[];
+    beaconRig: DestinationBeaconRig | null;
+    bioGrowthRig: BioGrowthRig | null;
+    interactables: THREE.Object3D[];
+    particlesMesh: THREE.InstancedMesh;
+    particles: ParticleSlot[];
+    sporesMesh: THREE.InstancedMesh;
+    spores: SporeSlot[];
+    isSoftwareGl: boolean;
+    resizeRenderer: () => void;
+    spawnBurst: (x: number, y: number, z: number, colorHex: number) => void;
+  } | null>(null);
+
+  // Reset player into the active chamber whenever run/mode/round advances
+  useEffect(() => {
+    const nextKey = `${state.runId}-${state.mode}-${state.currentRound}`;
+    if (playerRef.current.roundKey !== nextKey) {
+      playerRef.current.x = layout.spawn.x;
+      playerRef.current.z = layout.spawn.z;
+      playerRef.current.yaw = layout.spawn.yaw;
+      playerRef.current.lastNearPortalId = null;
+      playerRef.current.roundKey = nextKey;
+      setPlayerPose({ x: layout.spawn.x, z: layout.spawn.z, yaw: layout.spawn.yaw });
+      setSelectedPortal(null);
+      setSelectedPredictionId('');
+      setDoorLockState(null);
+    }
+  }, [state.runId, state.mode, state.currentRound, layout.spawn]);
+
+  // Keep audio mute & live cancer severity soundscape synced
+  useEffect(() => {
+    audioRef.current?.setMuted(muted);
+  }, [muted]);
+
+  useEffect(() => {
+    audioRef.current?.setSeverity(state.clinical.tumorBurden, state.mode);
+  }, [state.clinical.tumorBurden, state.mode]);
+
+  // Clear diagnostic toast after a short interval
+  useEffect(() => {
+    if (!diagToast) return;
+    const t = window.setTimeout(() => setDiagToast(null), 4600);
+    return () => window.clearTimeout(t);
+  }, [diagToast]);
+
+  // Rebuild world geometry inside the persistent Three.js scene when layout/mode/theme/severity changes
+  const rebuildWorld = useCallback(
+    (
+      nextLayout: LabyrinthLayout,
+      nextMode: SimulationState['mode'],
+      nextTheme: LabyrinthVisualTheme,
+      highDetailTextures: boolean,
+      nextSeverity: CancerSeverityMetrics
+    ) => {
+      const ctx = threeRef.current;
+      if (!ctx) return;
+
+      // Clean up old world meshes & textures
+      disposeObjectTree(ctx.worldGroup);
+      ctx.worldGroup.clear();
+      if (ctx.textures) {
+        ctx.textures.dispose();
+      }
+
+      const maxAniso = ctx.isSoftwareGl
+        ? 1
+        : Math.min(ctx.renderer.capabilities.getMaxAnisotropy(), 8);
+      const textures = createProceduralTexturePack(
+        nextTheme,
+        highDetailTextures,
+        maxAniso,
+        nextSeverity
+      );
+      ctx.textures = textures;
+      (ctx.sporesMesh.material as THREE.MeshBasicMaterial).color.setHex(
+        nextTheme.ambientParticleHex
+      );
+
+      // Apply progressive atmosphere, fog, and lighting driven by proximity to the destination
+      ctx.scene.background = new THREE.Color(nextTheme.bgHex);
+      ctx.scene.fog = new THREE.FogExp2(nextTheme.fogHex, nextTheme.fogDensity);
+      ctx.hemi.color.setHex(nextTheme.hemiSky);
+      ctx.hemi.groundColor.setHex(nextTheme.hemiGround);
+      ctx.hemi.intensity = nextTheme.hemiIntensity;
+      ctx.keyLight.color.setHex(nextTheme.keyColor);
+      ctx.keyLight.intensity = nextTheme.keyIntensity;
+      ctx.headlamp.color.setHex(nextTheme.headlampColor);
+      ctx.headlamp.intensity = nextTheme.headlampIntensity;
+
+      const portalRigs: PortalRig[] = [];
+      const totemRigs: TotemRig[] = [];
+      const diagnosticRigs: DiagnosticRig[] = [];
+      const interactables: THREE.Object3D[] = [];
+
+      // 1. Ground slab spanning entire labyrinth bounds (y = 0)
+      const spanX = Math.max(46, nextLayout.bounds.maxX - nextLayout.bounds.minX + 24);
+      const spanZ = Math.max(46, nextLayout.bounds.maxZ - nextLayout.bounds.minZ + 24);
+      const midX = (nextLayout.bounds.minX + nextLayout.bounds.maxX) / 2;
+      const midZ = (nextLayout.bounds.minZ + nextLayout.bounds.maxZ) / 2;
+
+      textures.floorAlbedo.repeat.set(Math.round(spanX / 2), Math.round(spanZ / 2));
+      const floorGeo = new THREE.PlaneGeometry(spanX, spanZ);
+      const floorMat = new THREE.MeshStandardMaterial({
+        map: textures.floorAlbedo,
+        roughness: 0.88,
+        metalness: 0.08,
+      });
+      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+      floorMesh.rotation.x = -Math.PI / 2;
+      floorMesh.position.set(midX, 0, midZ);
+      floorMesh.receiveShadow = !ctx.isSoftwareGl;
+      ctx.worldGroup.add(floorMesh);
+
+      // 2. InstancedMesh for walls, crisp top coping trim, and corner pilasters
+      const regularWalls = nextLayout.walls.filter((w) => !w.isPillar);
+      const pillars = nextLayout.walls.filter((w) => w.isPillar);
+      const dummyMat = new THREE.Matrix4();
+      const dummyPos = new THREE.Vector3();
+      const dummyQuat = new THREE.Quaternion();
+      const dummyScale = new THREE.Vector3();
+
+      if (regularWalls.length > 0) {
+        const unitWallGeo = new THREE.BoxGeometry(1, 1, 1);
+        const wallMat = new THREE.MeshStandardMaterial({
+          map: textures.wallAlbedo,
+          bumpMap: textures.wallBump,
+          bumpScale: 0.08,
+          roughness: 0.82,
+          metalness: 0.1,
+        });
+        const wallInst = new THREE.InstancedMesh(unitWallGeo, wallMat, regularWalls.length);
+        wallInst.castShadow = !ctx.isSoftwareGl;
+        wallInst.receiveShadow = !ctx.isSoftwareGl;
+        regularWalls.forEach((w, i) => {
+          dummyPos.set(w.x, w.height / 2, w.z);
+          dummyScale.set(w.width, w.height, w.depth);
+          dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+          wallInst.setMatrixAt(i, dummyMat);
+        });
+        wallInst.instanceMatrix.needsUpdate = true;
+        wallInst.computeBoundingSphere();
+        ctx.worldGroup.add(wallInst);
+
+        // Architectural cornice/coping along the top edge of every wall
+        const capGeo = new THREE.BoxGeometry(1, 1, 1);
+        const capMat = new THREE.MeshStandardMaterial({
+          color: nextTheme.capColor,
+          emissive: nextTheme.capEmissive,
+          emissiveIntensity: nextTheme.capEmissiveIntensity,
+          roughness: 0.65,
+          metalness: 0.2,
+        });
+        const capInst = new THREE.InstancedMesh(capGeo, capMat, regularWalls.length);
+        regularWalls.forEach((w, i) => {
+          dummyPos.set(w.x, w.height + 0.09, w.z);
+          dummyScale.set(w.width + 0.14, 0.18, w.depth + 0.14);
+          dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+          capInst.setMatrixAt(i, dummyMat);
+        });
+        capInst.instanceMatrix.needsUpdate = true;
+        capInst.computeBoundingSphere();
+        ctx.worldGroup.add(capInst);
+      }
+
+      if (pillars.length > 0) {
+        const unitPillarGeo = new THREE.BoxGeometry(1, 1, 1);
+        const pillarMat = new THREE.MeshStandardMaterial({
+          map: textures.pillarAlbedo,
+          roughness: 0.65,
+          metalness: 0.25,
+        });
+        const pillarInst = new THREE.InstancedMesh(unitPillarGeo, pillarMat, pillars.length);
+        pillarInst.castShadow = !ctx.isSoftwareGl;
+        pillarInst.receiveShadow = !ctx.isSoftwareGl;
+        pillars.forEach((p, i) => {
+          dummyPos.set(p.x, p.height / 2, p.z);
+          dummyScale.set(p.width, p.height, p.depth);
+          dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+          pillarInst.setMatrixAt(i, dummyMat);
+        });
+        pillarInst.instanceMatrix.needsUpdate = true;
+        pillarInst.computeBoundingSphere();
+        ctx.worldGroup.add(pillarInst);
+      }
+
+      // 3. Recessed luminous leading-lines on the floor
+      const lineMat = new THREE.MeshBasicMaterial({
+        color: nextTheme.guideLineHex,
+        transparent: true,
+        opacity: 0.38,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      });
+
+      const entryStrip = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 7.2), lineMat);
+      entryStrip.rotation.x = -Math.PI / 2;
+      entryStrip.position.set(0, 0.015, 5.4);
+      ctx.worldGroup.add(entryStrip);
+
+      // 4. Chamber center molecular chandeliers + leading lines toward each portal
+      for (const chamber of nextLayout.chambers) {
+        const totem = createChamberTotemGroup(
+          chamber.centerX,
+          chamber.centerZ,
+          nextMode,
+          chamber.isCurrent
+        );
+        ctx.worldGroup.add(totem.group);
+        totemRigs.push(totem);
+
+        const chamberPortals = nextLayout.portals.filter(
+          (p) => p.roundNumber === chamber.roundNumber
+        );
+        for (const p of chamberPortals) {
+          const dx = p.x - chamber.centerX;
+          const dz = p.z - chamber.centerZ;
+          const dist = Math.hypot(dx, dz);
+          const angle = Math.atan2(dx, dz);
+          const branchMat = new THREE.MeshBasicMaterial({
+            color: p.status === 'sealed' ? 0x334155 : p.accentHex,
+            transparent: true,
+            opacity: p.status === 'active' ? 0.38 : p.status === 'chosen' ? 0.28 : 0.12,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+          });
+          const guide = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.26, Math.max(1, dist - 1.2)),
+            branchMat
+          );
+          guide.rotation.x = -Math.PI / 2;
+          guide.rotation.z = angle;
+          guide.position.set(
+            chamber.centerX + dx * 0.5,
+            0.015,
+            chamber.centerZ + dz * 0.5
+          );
+          ctx.worldGroup.add(guide);
+        }
+      }
+
+      // 5. Forking Portal Archways (8-part composite groups)
+      for (const portal of nextLayout.portals) {
+        const rig = createForkPortalGroup(
+          portal,
+          textures.portalMembrane,
+          highDetailTextures,
+          maxAniso
+        );
+        rig.group.traverse((child) => {
+          if ((child as THREE.Sprite).isSprite) {
+            const mat = (child as THREE.Sprite).material;
+            if (mat.map) mat.map.userData.ownedBySprite = true;
+          }
+        });
+        ctx.worldGroup.add(rig.group);
+        portalRigs.push(rig);
+        if (portal.status === 'active') {
+          interactables.push(rig.hitbox);
+        }
+      }
+
+      // 6. Oncologist Diagnostic Consoles
+      const currentChamber = nextLayout.chambers[nextLayout.chambers.length - 1];
+      for (const station of nextLayout.diagnosticStations) {
+        const rig = createDiagnosticConsoleGroup(
+          station,
+          currentChamber.centerX,
+          highDetailTextures,
+          maxAniso
+        );
+        rig.group.traverse((child) => {
+          if ((child as THREE.Sprite).isSprite) {
+            const mat = (child as THREE.Sprite).material;
+            if (mat.map) mat.map.userData.ownedBySprite = true;
+          }
+        });
+        ctx.worldGroup.add(rig.group);
+        diagnosticRigs.push(rig);
+        interactables.push(rig.hitbox);
+      }
+
+      // 7. Horizon Destination Beacon towering beyond the northern walls (grows as you near the destination!)
+      const beaconRig = createDestinationBeaconGroup(
+        currentChamber.centerX,
+        currentChamber.centerZ - 17.5,
+        nextTheme
+      );
+      ctx.worldGroup.add(beaconRig.group);
+
+      // 8. Severity-driven organic tumorous nodules anchored along chamber corners & wall bases
+      const bioGrowthRig = createSeverityBioGrowths(nextLayout.chambers, nextSeverity);
+      if (bioGrowthRig) {
+        ctx.worldGroup.add(bioGrowthRig.mesh);
+      }
+
+      ctx.portalRigs = portalRigs;
+      ctx.totemRigs = totemRigs;
+      ctx.diagnosticRigs = diagnosticRigs;
+      ctx.beaconRig = beaconRig;
+      ctx.bioGrowthRig = bioGrowthRig;
+      ctx.interactables = interactables;
+    },
+    []
+  );
+
+  // Initialize Three.js renderer ONCE on mount
+  useEffect(() => {
+    const container = mountRef.current;
+    if (!container) return;
+
+    audioRef.current = new LabyrinthAudio();
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true, // Sharp edges in Media/Alta/Ultra while Baja keeps pixelated buffer
+      powerPreference: 'high-performance',
+      alpha: false,
+      preserveDrawingBuffer: true, // Prevents blank frames between software-WebGL paced ticks
+    });
+    const gl = renderer.getContext();
+    const isSoftwareGl = detectSoftwareWebGL(gl);
+
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.24;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = !isSoftwareGl;
+    if (!isSoftwareGl) {
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
+
+    const canvas = renderer.domElement;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.display = 'block';
+    canvas.style.imageRendering = getLabyrinthResolutionPreset(resolutionLevelRef.current).pixelated
+      ? 'pixelated'
+      : 'auto';
+    container.innerHTML = '';
+    container.appendChild(canvas);
+
+    const scene = new THREE.Scene();
+
+    // Soft studio PMREM environment on hardware GPUs (skipped on CPU software WebGL for instant first-frame startup)
+    let envRT: THREE.WebGLRenderTarget | null = null;
+    if (!isSoftwareGl) {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      const roomEnv = new RoomEnvironment();
+      envRT = pmrem.fromScene(roomEnv, 0.04);
+      scene.environment = envRT.texture;
+      roomEnv.dispose();
+      pmrem.dispose();
+    }
+
+    // Camera positioned at spawn looking straight north (-Z) toward the glowing forking portals
+    const camera = new THREE.PerspectiveCamera(64, 16 / 9, 0.1, 140);
+    camera.position.set(layoutRef.current.spawn.x, 1.65, layoutRef.current.spawn.z);
+    camera.lookAt(layoutRef.current.spawn.x, 1.55, layoutRef.current.spawn.z - 8);
+
+    // Warm key + cool hemisphere + subtle fill + dynamic explorer headlamp
+    const hemi = new THREE.HemisphereLight(0xdbeafe, 0x2c243a, 1.65);
+    scene.add(hemi);
+
+    const keyLight = new THREE.DirectionalLight(0xfff1dc, 2.05);
+    keyLight.position.set(14, 24, 16);
+    if (!isSoftwareGl) {
+      keyLight.castShadow = true;
+      keyLight.shadow.mapSize.set(1024, 1024);
+      keyLight.shadow.bias = -0.0005;
+    }
+    scene.add(keyLight);
+
+    const headlamp = new THREE.PointLight(0xfef08a, 1.85, 18, 1.4);
+    headlamp.position.set(layoutRef.current.spawn.x, 2.5, layoutRef.current.spawn.z);
+    scene.add(headlamp);
+
+    const worldGroup = new THREE.Group();
+    scene.add(worldGroup);
+
+    // Pooled low-poly spark particles (zero per-frame allocations)
+    const PARTICLE_COUNT = 36;
+    const pGeo = new THREE.OctahedronGeometry(0.11, 0);
+    const pMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const particlesMesh = new THREE.InstancedMesh(pGeo, pMat, PARTICLE_COUNT);
+    particlesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const particles: ParticleSlot[] = [];
+    const zeroMat = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push({
+        active: false,
+        x: 0,
+        y: -10,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        life: 0,
+        maxLife: 0.7,
+        colorHex: 0x38bdf8,
+      });
+      particlesMesh.setMatrixAt(i, zeroMat);
+      particlesMesh.setColorAt(i, new THREE.Color(0x38bdf8));
+    }
+    particlesMesh.instanceMatrix.needsUpdate = true;
+    if (particlesMesh.instanceColor) particlesMesh.instanceColor.needsUpdate = true;
+    particlesMesh.frustumCulled = false;
+    scene.add(particlesMesh);
+
+    // Pooled floating atmospheric bio-spores (active count & rise speed scale with cancer severity)
+    const SPORE_POOL_SIZE = 64;
+    const sporeGeo = new THREE.OctahedronGeometry(0.065, 0);
+    const sporeMat = new THREE.MeshBasicMaterial({
+      color: themeRef.current.ambientParticleHex,
+      transparent: true,
+      opacity: 0.72,
+    });
+    const sporesMesh = new THREE.InstancedMesh(sporeGeo, sporeMat, SPORE_POOL_SIZE);
+    sporesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const spores: SporeSlot[] = [];
+    for (let i = 0; i < SPORE_POOL_SIZE; i++) {
+      const ang = (i * 2.39996) % (Math.PI * 2);
+      const rad = 1.4 + ((i * 17) % 100) / 100 * 5.2;
+      spores.push({
+        ox: Math.cos(ang) * rad,
+        oz: Math.sin(ang) * rad,
+        y: 0.3 + ((i * 29) % 100) / 100 * 4.4,
+        speed: 0.35 + ((i * 13) % 10) * 0.06,
+        driftPhase: i * 0.73,
+        baseScale: 0.7 + ((i * 11) % 7) * 0.14,
+      });
+      sporesMesh.setMatrixAt(i, zeroMat);
+    }
+    sporesMesh.instanceMatrix.needsUpdate = true;
+    sporesMesh.frustumCulled = false;
+    scene.add(sporesMesh);
+
+    const _pColor = new THREE.Color();
+    const spawnBurst = (x: number, y: number, z: number, colorHex: number) => {
+      let spawned = 0;
+      for (let i = 0; i < PARTICLE_COUNT && spawned < 16; i++) {
+        const slot = particles[i];
+        if (!slot.active || slot.life > slot.maxLife * 0.6) {
+          const ang = (spawned / 16) * Math.PI * 2 + (i % 3) * 0.2;
+          const speed = 1.6 + (spawned % 4) * 0.6;
+          slot.active = true;
+          slot.x = x;
+          slot.y = y;
+          slot.z = z;
+          slot.vx = Math.cos(ang) * speed;
+          slot.vy = 1.8 + (spawned % 3) * 0.9;
+          slot.vz = Math.sin(ang) * speed;
+          slot.life = 0;
+          slot.maxLife = 0.65 + (spawned % 3) * 0.15;
+          slot.colorHex = colorHex;
+          _pColor.setHex(colorHex);
+          particlesMesh.setColorAt(i, _pColor);
+          spawned++;
+        }
+      }
+      if (particlesMesh.instanceColor) particlesMesh.instanceColor.needsUpdate = true;
+    };
+
+    const resizeRenderer = () => {
+      const rect = container.getBoundingClientRect();
+      const cssW = Math.max(320, Math.floor(rect.width));
+      const cssH = Math.max(240, Math.floor(rect.height));
+
+      const buf = computeLabyrinthRenderBuffer(
+        cssW,
+        cssH,
+        resolutionLevelRef.current,
+        window.devicePixelRatio || 1,
+        isSoftwareGl
+      );
+
+      renderer.setPixelRatio(buf.pixelRatio);
+      renderer.setSize(buf.width, buf.height, false);
+      canvas.style.imageRendering = buf.imageRendering;
+
+      setRenderBufferDims((prev) =>
+        prev.w === canvas.width && prev.h === canvas.height
+          ? prev
+          : { w: canvas.width, h: canvas.height }
+      );
+
+      camera.aspect = cssW / cssH;
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+    };
+
+    threeRef.current = {
+      renderer,
+      scene,
+      camera,
+      worldGroup,
+      hemi,
+      keyLight,
+      headlamp,
+      textures: null,
+      portalRigs: [],
+      totemRigs: [],
+      diagnosticRigs: [],
+      beaconRig: null,
+      bioGrowthRig: null,
+      interactables: [],
+      particlesMesh,
+      particles,
+      sporesMesh,
+      spores,
+      isSoftwareGl,
+      resizeRenderer,
+      spawnBurst,
+    };
+
+    audioRef.current.setSeverity(severityRef.current.burden, modeRef.current);
+
+    rebuildWorld(
+      layoutRef.current,
+      modeRef.current,
+      themeRef.current,
+      smoothTexturesRef.current,
+      severityRef.current
+    );
+    resizeRenderer();
+
+    // Context lost / restored resilience
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      setContextLost(true);
+    };
+    const handleContextRestored = () => {
+      setContextLost(false);
+      rebuildWorld(
+        layoutRef.current,
+        modeRef.current,
+        themeRef.current,
+        smoothTexturesRef.current,
+        severityRef.current
+      );
+      resizeRenderer();
+    };
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
+    // ResizeObserver keeps canvas aligned with container & fullscreen toggle
+    const ro = new ResizeObserver(() => resizeRenderer());
+    ro.observe(container);
+
+    // Keyboard & pointer interaction state
+    const heldKeys = new Set<string>();
+    const isTypingTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      audioRef.current?.ensureAmbientStarted();
+      if (
+        ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
+          e.code
+        )
+      ) {
+        heldKeys.add(e.code);
+        if (e.code.startsWith('Arrow')) e.preventDefault();
+      } else if (e.code === 'KeyV') {
+        setCameraMode((prev) => (prev === 'first_person' ? 'aerial' : 'first_person'));
+      } else if (e.code === 'KeyM') {
+        setMuted((prev) => !prev);
+      } else if (e.code === 'Escape') {
+        setSelectedPortal(null);
+      } else if (e.code === 'Equal' || e.code === 'NumpadAdd') {
+        setZoomLevel((prev) => stepLabyrinthZoom(prev, 1));
+      } else if (e.code === 'Minus' || e.code === 'NumpadSubtract') {
+        setZoomLevel((prev) => stepLabyrinthZoom(prev, -1));
+      } else if (e.code === 'Digit0' || e.code === 'Numpad0') {
+        setZoomLevel(LABYRINTH_ZOOM_DEFAULT);
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      heldKeys.delete(e.code);
+    };
+
+    const clearKeys = () => heldKeys.clear();
+    const onVisibilityChange = () => {
+      if (document.hidden) clearKeys();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', clearKeys);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    // Pointer drag-look & raycast click on portals / diagnostic terminals
+    const raycaster = new THREE.Raycaster();
+    const pointerNdc = new THREE.Vector2();
+    let isDragging = false;
+    let dragMoved = false;
+    let lastPointerX = 0;
+
+    const getHitObject = (clientX: number, clientY: number): THREE.Object3D | null => {
+      const ctx = threeRef.current;
+      if (!ctx || ctx.interactables.length === 0) return null;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointerNdc, ctx.camera);
+      const hits = raycaster.intersectObjects(ctx.interactables, false);
+      return hits.length > 0 ? hits[0].object : null;
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      audioRef.current?.ensureAmbientStarted();
+      isDragging = true;
+      dragMoved = false;
+      lastPointerX = e.clientX;
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (isDragging) {
+        const dx = e.clientX - lastPointerX;
+        if (Math.abs(dx) > 2) dragMoved = true;
+        lastPointerX = e.clientX;
+        if (cameraModeRef.current === 'first_person') {
+          playerRef.current.yaw -= dx * 0.0045;
+        }
+        return;
+      }
+
+      const hit = getHitObject(e.clientX, e.clientY);
+      if (hit?.userData?.kind === 'portal') {
+        const portal = layoutRef.current.portals.find((p) => p.id === hit.userData.portalId);
+        setHoveredLabel(portal ? `Bifurcación: ${portal.label}` : null);
+        canvas.style.cursor = 'pointer';
+      } else if (hit?.userData?.kind === 'diagnostic') {
+        const st = layoutRef.current.diagnosticStations.find(
+          (d) => d.toolId === hit.userData.toolId
+        );
+        setHoveredLabel(st ? `Terminal: ${st.label}` : null);
+        canvas.style.cursor = 'pointer';
+      } else {
+        setHoveredLabel(null);
+        canvas.style.cursor = cameraModeRef.current === 'first_person' ? 'grab' : 'default';
+      }
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      // Only handle pointerups that originated on the 3D canvas (prevents HUD/modal click-through)
+      if (!isDragging) return;
+      const wasDrag = dragMoved;
+      isDragging = false;
+      dragMoved = false;
+      if (wasDrag) return;
+
+      const hit = getHitObject(e.clientX, e.clientY);
+      if (!hit) return;
+
+      if (hit.userData?.kind === 'portal') {
+        const portal = layoutRef.current.portals.find((p) => p.id === hit.userData.portalId);
+        if (portal && portal.status === 'active') {
+          audioRef.current?.playPortalFocus(severityRef.current.normalized);
+          threeRef.current?.spawnBurst(portal.x, 2.0, portal.z, portal.accentHex);
+          setSelectedPortal(portal);
+          setDoorOpenNonce((n) => n + 1);
+          setSelectedPredictionId('');
+        }
+      } else if (hit.userData?.kind === 'diagnostic') {
+        const toolId = hit.userData.toolId as DiagnosticToolId;
+        const station = layoutRef.current.diagnosticStations.find((d) => d.toolId === toolId);
+        const msg = onRunDiagnosticRef.current(toolId);
+        audioRef.current?.playDiagnostic();
+        if (station) {
+          threeRef.current?.spawnBurst(station.x, 1.5, station.z, 0x10b981);
+        }
+        if (msg) {
+          setDiagToast(msg);
+        }
+      }
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY === 0) return;
+      const step = e.deltaY < 0 ? 0.12 : -0.12;
+      setZoomLevel((prev) => clampLabyrinthZoom(prev + step));
+    };
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+
+    // Pre-allocated vectors/matrices for zero-GC animation loop
+    const _camTargetPos = new THREE.Vector3();
+    const _camLookAt = new THREE.Vector3();
+    const _currLookAt = new THREE.Vector3(0, 1.55, 0);
+    const _pPos = new THREE.Vector3();
+    const _pQuat = new THREE.Quaternion();
+    const _pScale = new THREE.Vector3();
+    const _pMat = new THREE.Matrix4();
+    const _bEuler = new THREE.Euler();
+
+    // Software WebGL frame pacer (drains GPU pipeline before scheduling next frame)
+    let rafId = 0;
+    let timerId = 0;
+    let disposed = false;
+
+    const afterDraw = (next: () => void) => {
+      if (disposed) return;
+      if (!isSoftwareGl) {
+        rafId = window.requestAnimationFrame(next);
+        return;
+      }
+      const gl2 = gl as WebGL2RenderingContext;
+      if (typeof gl2.fenceSync === 'function') {
+        const sync = gl2.fenceSync(gl2.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        gl2.flush();
+        const poll = () => {
+          if (disposed) {
+            if (sync) gl2.deleteSync(sync);
+            return;
+          }
+          if (!sync || gl2.clientWaitSync(sync, 0, 0) !== gl2.TIMEOUT_EXPIRED) {
+            if (sync) gl2.deleteSync(sync);
+            timerId = window.setTimeout(() => {
+              if (!disposed) rafId = window.requestAnimationFrame(next);
+            }, 80);
+          } else {
+            timerId = window.setTimeout(poll, 16);
+          }
+        };
+        timerId = window.setTimeout(poll, 16);
+      } else {
+        timerId = window.setTimeout(() => {
+          if (!disposed) rafId = window.requestAnimationFrame(next);
+        }, 80);
+      }
+    };
+
+    let lastTime = performance.now();
+    let elapsed = 0;
+    let lastPoseSync = 0;
+
+    const tick = () => {
+      if (disposed) return;
+      const now = performance.now();
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      elapsed += dt;
+
+      const p = playerRef.current;
+      const curLayout = layoutRef.current;
+      const ctx = threeRef.current;
+
+      if (ctx) {
+        // 1. Player turning & movement (paused only while reading portal overlay? No, keep free!)
+        const turnSpeed = 2.05;
+        if (heldKeys.has('KeyQ') || (cameraModeRef.current === 'first_person' && heldKeys.has('ArrowLeft'))) {
+          p.yaw += turnSpeed * dt;
+        }
+        if (heldKeys.has('KeyE') || (cameraModeRef.current === 'first_person' && heldKeys.has('ArrowRight'))) {
+          p.yaw -= turnSpeed * dt;
+        }
+
+        let moveForward = 0;
+        let moveRight = 0;
+        if (heldKeys.has('KeyW') || heldKeys.has('ArrowUp')) moveForward += 1;
+        if (heldKeys.has('KeyS') || heldKeys.has('ArrowDown')) moveForward -= 1;
+        if (heldKeys.has('KeyD') || (cameraModeRef.current === 'aerial' && heldKeys.has('ArrowRight'))) {
+          moveRight += 1;
+        }
+        if (heldKeys.has('KeyA') || (cameraModeRef.current === 'aerial' && heldKeys.has('ArrowLeft'))) {
+          moveRight -= 1;
+        }
+
+        const speed = 5.4;
+        if (moveForward !== 0 || moveRight !== 0) {
+          const len = Math.hypot(moveForward, moveRight);
+          const nf = moveForward / len;
+          const nr = moveRight / len;
+          // In aerial view, WASD moves along world cardinal axes; in 1st-person, relative to yaw
+          const refYaw = cameraModeRef.current === 'aerial' ? 0 : p.yaw;
+          const fwdX = -Math.sin(refYaw);
+          const fwdZ = -Math.cos(refYaw);
+          const rightX = Math.cos(refYaw);
+          const rightZ = -Math.sin(refYaw);
+
+          const dx = (fwdX * nf + rightX * nr) * speed * dt;
+          const dz = (fwdZ * nf + rightZ * nr) * speed * dt;
+
+          const resolved = resolvePlayerMovement(p.x, p.z, dx, dz, curLayout.walkableBoxes);
+          const movedDist = Math.hypot(resolved.x - p.x, resolved.z - p.z);
+          p.x = resolved.x;
+          p.z = resolved.z;
+
+          if (movedDist > 0.002) {
+            p.bobPhase += movedDist * 2.5;
+            p.stepAccum += movedDist;
+            if (p.stepAccum >= 2.1) {
+              p.stepAccum = 0;
+              audioRef.current?.playStep();
+            }
+          }
+
+          // Proximity check for walking into an active forking portal
+          const nearPortal = findNearbyActivePortal(p.x, p.z, curLayout.portals, 2.25);
+          if (nearPortal && nearPortal.id !== p.lastNearPortalId) {
+            p.lastNearPortalId = nearPortal.id;
+            audioRef.current?.playPortalFocus(severityRef.current.normalized);
+            ctx.spawnBurst(nearPortal.x, 1.9, nearPortal.z, nearPortal.accentHex);
+            setSelectedPortal(nearPortal);
+            setDoorOpenNonce((n) => n + 1);
+            setSelectedPredictionId('');
+          } else if (!nearPortal) {
+            p.lastNearPortalId = null;
+          }
+        }
+
+        // 2. Smooth exponential camera damping between 1st-Person and Aerial Map modes
+        const damp = 1 - Math.exp(-8.5 * dt);
+        if (cameraModeRef.current === 'first_person') {
+          const bobY = Math.sin(p.bobPhase) * 0.045;
+          _camTargetPos.set(p.x, 1.65 + bobY, p.z);
+          _camLookAt.set(
+            p.x - Math.sin(p.yaw) * 6,
+            1.58 + bobY * 0.5,
+            p.z - Math.cos(p.yaw) * 6
+          );
+        } else {
+          // Elevated architectural view of the entire branching labyrinth
+          const centerX = (curLayout.bounds.minX + curLayout.bounds.maxX) / 2;
+          const centerZ = curLayout.currentChamberCenter.z;
+          const aerialScale = computeAerialZoomDistanceScale(zoomLevelRef.current);
+          const camHeight = Math.min(48, (19 + curLayout.chambers.length * 4.2) * aerialScale);
+          const camOffsetZ = (12 + curLayout.chambers.length * 1.5) * aerialScale;
+          _camTargetPos.set(centerX, camHeight, centerZ + camOffsetZ);
+          _camLookAt.set(centerX, 0.5, centerZ - 1.5);
+        }
+
+        ctx.camera.position.lerp(_camTargetPos, damp);
+        _currLookAt.lerp(_camLookAt, damp);
+        ctx.camera.lookAt(_currLookAt);
+
+        // Smooth optical FOV zoom damping (1st-person zoom & smooth reset in aerial view)
+        const targetFov = computeLabyrinthCameraFov(zoomLevelRef.current, cameraModeRef.current);
+        if (Math.abs(ctx.camera.fov - targetFov) > 0.02) {
+          ctx.camera.fov += (targetFov - ctx.camera.fov) * damp;
+          ctx.camera.updateProjectionMatrix();
+        }
+
+        // Headlamp glides softly with the explorer & pulses with biological heartbeat as severity rises
+        const sev = severityRef.current;
+        const beatHz = sev.heartbeatBpm / 60;
+        const beatPhase = (elapsed * beatHz) % 1;
+        const beatPulse =
+          Math.exp(-Math.pow((beatPhase - 0.12) / 0.055, 2)) +
+          0.65 * Math.exp(-Math.pow((beatPhase - 0.28) / 0.06, 2));
+        ctx.headlamp.position.set(p.x, 2.5, p.z);
+        ctx.headlamp.intensity =
+          themeRef.current.headlampIntensity * (1 + beatPulse * 0.28 * sev.normalized);
+
+        // 3. Animate portal keystones, energy curtains, molecular totems, bio-growths & diagnostic beacons
+        for (let i = 0; i < ctx.portalRigs.length; i++) {
+          const rig = ctx.portalRigs[i];
+          rig.keystone.rotation.y += dt * (rig.portal.status === 'active' ? 1.5 : 0.35);
+          rig.keystone.position.y = 3.96 + Math.sin(elapsed * 2.2 + i) * 0.08;
+          if (rig.membrane) {
+            const mat = rig.membrane.material as THREE.MeshBasicMaterial;
+            mat.opacity = 0.32 + Math.sin(elapsed * 3.0 + i * 1.1) * 0.1;
+          }
+        }
+
+        for (let i = 0; i < ctx.totemRigs.length; i++) {
+          const tRig = ctx.totemRigs[i];
+          tRig.core.rotation.y += dt * (0.9 + sev.normalized * 0.8);
+          tRig.core.rotation.x += dt * 0.4;
+          tRig.ringA.rotation.z += dt * (0.7 + sev.normalized * 0.65);
+          tRig.ringB.rotation.z -= dt * (0.55 + sev.normalized * 0.55);
+        }
+
+        for (let i = 0; i < ctx.diagnosticRigs.length; i++) {
+          const dRig = ctx.diagnosticRigs[i];
+          dRig.beacon.rotation.y += dt * 1.6;
+          dRig.beacon.position.y = 1.72 + Math.sin(elapsed * 2.8 + i) * 0.06;
+        }
+
+        if (ctx.beaconRig) {
+          ctx.beaconRig.core.rotation.y += dt * (0.7 + sev.normalized * 0.7);
+          ctx.beaconRig.ringOuter.rotation.z += dt * 0.45;
+          ctx.beaconRig.ringInner.rotation.z -= dt * 0.6;
+        }
+
+        // Organic tumorous nodules breathe & pulse in sync with severity heartbeat
+        if (ctx.bioGrowthRig) {
+          const bRig = ctx.bioGrowthRig;
+          bRig.material.emissiveIntensity =
+            bRig.baseEmissiveIntensity * (0.85 + beatPulse * 0.55);
+          const amp = 0.06 + sev.normalized * 0.12;
+          for (let i = 0; i < bRig.instances.length; i++) {
+            const inst = bRig.instances[i];
+            const wave =
+              1 +
+              Math.sin(elapsed * sev.pulseSpeed + inst.phase) * amp +
+              beatPulse * 0.08 * sev.normalized;
+            _pPos.set(inst.x, inst.y, inst.z);
+            _bEuler.set(inst.phase * 0.3, inst.rotY, inst.phase * 0.2);
+            _pQuat.setFromEuler(_bEuler);
+            _pScale.set(inst.sx * wave, inst.sy * wave, inst.sz * wave);
+            _pMat.compose(_pPos, _pQuat, _pScale);
+            bRig.mesh.setMatrixAt(i, _pMat);
+          }
+          bRig.mesh.instanceMatrix.needsUpdate = true;
+        }
+
+        // Floating atmospheric bio-spores drifting inside the active chamber
+        const activeSpores = Math.min(SPORE_POOL_SIZE, sev.sporeCount);
+        const cx = curLayout.currentChamberCenter.x;
+        const cz = curLayout.currentChamberCenter.z;
+        const riseBoost = 0.6 + sev.normalized * 1.3;
+        _pQuat.identity();
+        for (let i = 0; i < SPORE_POOL_SIZE; i++) {
+          if (i >= activeSpores) {
+            ctx.sporesMesh.setMatrixAt(i, zeroMat);
+            continue;
+          }
+          const sp = ctx.spores[i];
+          sp.y += sp.speed * riseBoost * dt;
+          if (sp.y > 4.7) sp.y = 0.25;
+          const sway = Math.sin(elapsed * 1.4 + sp.driftPhase) * 0.28;
+          const sc = sp.baseScale * (0.8 + sev.normalized * 0.55);
+          _pPos.set(cx + sp.ox + sway, sp.y, cz + sp.oz - sway * 0.7);
+          _pScale.set(sc, sc, sc);
+          _pMat.compose(_pPos, _pQuat, _pScale);
+          ctx.sporesMesh.setMatrixAt(i, _pMat);
+        }
+        ctx.sporesMesh.instanceMatrix.needsUpdate = true;
+
+        // 4. Update pooled spark particles
+        let anyParticles = false;
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+          const slot = ctx.particles[i];
+          if (!slot.active) continue;
+          slot.life += dt;
+          if (slot.life >= slot.maxLife) {
+            slot.active = false;
+            ctx.particlesMesh.setMatrixAt(i, zeroMat);
+            anyParticles = true;
+            continue;
+          }
+          slot.vy -= 4.8 * dt;
+          slot.x += slot.vx * dt;
+          slot.y += slot.vy * dt;
+          slot.z += slot.vz * dt;
+          const s = Math.max(0.01, 1 - slot.life / slot.maxLife);
+          _pPos.set(slot.x, Math.max(0.05, slot.y), slot.z);
+          _pScale.set(s, s, s);
+          _pMat.compose(_pPos, _pQuat, _pScale);
+          ctx.particlesMesh.setMatrixAt(i, _pMat);
+          anyParticles = true;
+        }
+        if (anyParticles) {
+          ctx.particlesMesh.instanceMatrix.needsUpdate = true;
+        }
+
+        // Sync minimap pose at ~12Hz
+        if (now - lastPoseSync > 85) {
+          lastPoseSync = now;
+          setPlayerPose((prev) => {
+            if (
+              Math.abs(prev.x - p.x) < 0.04 &&
+              Math.abs(prev.z - p.z) < 0.04 &&
+              Math.abs(prev.yaw - p.yaw) < 0.04
+            ) {
+              return prev;
+            }
+            return { x: p.x, z: p.z, yaw: p.yaw };
+          });
+        }
+
+        ctx.renderer.render(ctx.scene, ctx.camera);
+      }
+
+      afterDraw(tick);
+    };
+
+    // Start render loop
+    afterDraw(tick);
+
+    return () => {
+      disposed = true;
+      window.cancelAnimationFrame(rafId);
+      window.clearTimeout(timerId);
+      ro.disconnect();
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', clearKeys);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('wheel', onWheel);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
+
+      disposeObjectTree(worldGroup);
+      if (threeRef.current?.textures) {
+        threeRef.current.textures.dispose();
+      }
+      pGeo.dispose();
+      pMat.dispose();
+      sporeGeo.dispose();
+      sporeMat.dispose();
+      if (envRT) envRT.dispose();
+      renderer.dispose();
+      audioRef.current?.dispose();
+      threeRef.current = null;
+    };
+  }, [rebuildWorld]);
+
+  // Rebuild labyrinth chambers/portals/aesthetics/severity without losing player pose
+  useEffect(() => {
+    rebuildWorld(layout, state.mode, theme, resolutionPreset.smoothTextures, severity);
+    if (threeRef.current) {
+      threeRef.current.renderer.render(threeRef.current.scene, threeRef.current.camera);
+    }
+  }, [layout, state.mode, theme, resolutionPreset.smoothTextures, severity, rebuildWorld]);
+
+  // Update internal pixel buffer scale instantly when changing resolution level or expand state
+  useEffect(() => {
+    threeRef.current?.resizeRenderer();
+  }, [resolutionLevel, isExpanded]);
+
+  // Essential-only portal branch metadata for the confirmation drawer
+  // Freshly shuffles prediction options every time any door is opened (doorOpenNonce)
+  const activePortalDetails = useMemo(() => {
+    void doorOpenNonce;
+    if (!selectedPortal || !currentRoundDef) return null;
+    if (state.mode === 'cancer') {
+      const strat = currentRoundDef.cancerStrategies.find((s) => s.id === selectedPortal.actionId);
+      if (!strat) return null;
+      return {
+        title: formatBiologyText(strat.label, molecularDetail),
+        summary: formatBiologyText(strat.advantage, molecularDetail),
+        costTag: formatBiologyText(`Costo: ${strat.cost}`, molecularDetail),
+        predictions: shuffleRandom(currentRoundDef.cancerPredictions).map((p) => ({
+          ...p,
+          label: formatBiologyText(p.label, molecularDetail),
+        })),
+      };
+    } else {
+      const therapy = getTherapyById(selectedPortal.actionId as TherapyId);
+      if (!therapy) return null;
+      return {
+        title: getTherapyDisplayName(therapy, molecularDetail),
+        summary: formatBiologyText(therapy.mechanism, molecularDetail),
+        costTag: `Toxicidad ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`,
+        predictions: shuffleRandom(currentRoundDef.oncologistPredictions).map((p) => ({
+          ...p,
+          label: formatBiologyText(p.label, molecularDetail),
+        })),
+      };
+    }
+  }, [selectedPortal, doorOpenNonce, currentRoundDef, state.mode, molecularDetail]);
+
+  const activeDoorLock =
+    selectedPortal && doorLockState?.portalId === selectedPortal.id ? doorLockState : null;
+
+  const handleConfirmBranch = () => {
+    if (!selectedPortal || !selectedPredictionId) return;
+    const gate = evaluatePredictionGate(state, selectedPortal.actionId, selectedPredictionId);
+    if (!gate.allowed) {
+      audioRef.current?.playDoorLocked();
+      threeRef.current?.spawnBurst(selectedPortal.x, 1.8, selectedPortal.z, 0xe11d48);
+      setDoorLockState((prev) => ({
+        portalId: selectedPortal.id,
+        feedback: formatBiologyText(gate.feedback, molecularDetail),
+        rejectedIds: Array.from(
+          new Set([
+            ...(prev?.portalId === selectedPortal.id ? prev.rejectedIds : []),
+            selectedPredictionId,
+          ])
+        ),
+      }));
+      return;
+    }
+
+    audioRef.current?.ensureAmbientStarted();
+    audioRef.current?.playBranchCross(
+      state.clinical.tumorBurden,
+      state.mode === 'cancer' ? 12 : -12,
+      state.mode
+    );
+    threeRef.current?.spawnBurst(selectedPortal.x, 2.0, selectedPortal.z, selectedPortal.accentHex);
+
+    if (state.mode === 'cancer') {
+      onResolveCancerTurn(selectedPortal.actionId, selectedPredictionId);
+    } else {
+      onResolveOncologistTurn(selectedPortal.actionId as TherapyId, selectedPredictionId);
+    }
+    setDoorLockState(null);
+    setSelectedPortal(null);
+    setSelectedPredictionId('');
+  };
+
+  // Minimap coordinate transform
+  const mapWidth = 112;
+  const mapHeight = 112;
+  const worldW = Math.max(16, layout.bounds.maxX - layout.bounds.minX);
+  const worldH = Math.max(16, layout.bounds.maxZ - layout.bounds.minZ);
+  const mapScale = Math.min((mapWidth - 14) / worldW, (mapHeight - 14) / worldH);
+  const toMapX = (wx: number) =>
+    mapWidth / 2 + (wx - (layout.bounds.minX + layout.bounds.maxX) / 2) * mapScale;
+  const toMapY = (wz: number) =>
+    mapHeight / 2 + (wz - (layout.bounds.minZ + layout.bounds.maxZ) / 2) * mapScale;
+
+  return (
+    <div
+      className="relative w-full h-full bg-slate-950 select-none overflow-hidden"
+      data-testid="labyrinth-3d-stage"
+      data-labyrinth-round={state.currentRound}
+      data-labyrinth-mode={state.mode}
+      data-unlimited-mode={state.unlimitedMode ? 'true' : 'false'}
+      data-labyrinth-phase={theme.phase}
+      data-destination-progress={destination.progress}
+      data-cancer-severity={severity.level}
+      data-cancer-burden={severity.burden}
+      data-heartbeat-bpm={severity.heartbeatBpm}
+      data-camera-mode={cameraMode}
+      data-zoom-level={Math.round(zoomLevel * 100)}
+      data-low-res={resolutionLevel === 'low' ? 'true' : 'false'}
+      data-resolution-level={resolutionLevel}
+      data-canvas-width={renderBufferDims.w}
+      data-canvas-height={renderBufferDims.h}
+    >
+      {/* Isolated WebGL Canvas Mount */}
+      <div ref={mountRef} className="w-full h-full" />
+
+      {/* Peripheral crimson urgency vignette at high/critical cancer severity (pure CSS, no backdrop-filter) */}
+      {severity.vignetteOpacity > 0 && (
+        <div
+          aria-hidden="true"
+          data-testid="severity-vignette"
+          className="pointer-events-none absolute inset-0 transition-opacity duration-500"
+          style={{
+            opacity: severity.vignetteOpacity,
+            background:
+              'radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(153,27,27,0.75) 84%, rgba(69,10,10,0.95) 100%)',
+          }}
+        />
+      )}
+
+      {/* Top-Left Controls: Back to Start + Minimal Destination & Severity Chip */}
+      <div className="pointer-events-none absolute top-3 left-3 flex flex-col items-start gap-2">
+        {onBackHome && (
+          <button
+            type="button"
+            onClick={onBackHome}
+            className="pointer-events-auto bg-slate-950/92 hover:bg-slate-900 border border-slate-600/90 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-100 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-slate-300" aria-hidden="true" />
+            Volver al inicio
+          </button>
+        )}
+
+        <div className="w-[248px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 space-y-1.5">
+          <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <Compass
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  state.mode === 'cancer' ? 'text-rose-400' : 'text-sky-400'
+                }`}
+                aria-hidden="true"
+              />
+              Ronda {state.currentRound}
+            </span>
+            <span className="text-slate-200 font-semibold tabular-nums">
+              {state.mode === 'cancer'
+                ? `Cáncer ${destination.progress}%`
+                : `Liberación ${destination.progress}%`}
+            </span>
+          </div>
+          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-300 ${
+                state.mode === 'cancer'
+                  ? theme.phase >= 2
+                    ? 'bg-amber-400'
+                    : 'bg-rose-500'
+                  : theme.phase >= 2
+                    ? 'bg-emerald-400'
+                    : 'bg-sky-400'
+              }`}
+              style={{ width: `${destination.progress}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <span className="font-semibold text-white truncate">{theme.phaseLabel}</span>
+            <span className="font-mono text-slate-400 tabular-nums shrink-0">
+              {state.accumulatedProblems.length}{' '}
+              {state.accumulatedProblems.length === 1 ? 'cambio' : 'cambios'}
+            </span>
+          </div>
+          <div
+            data-testid="labyrinth-severity-badge"
+            className="pt-1 border-t border-slate-800/90 flex items-center justify-between gap-2 text-[11px]"
+          >
+            <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: severity.accentCss }}
+                aria-hidden="true"
+              />
+              <span>Gravedad: {severity.shortLabel}</span>
+            </span>
+            <span className="inline-flex items-center gap-1 font-mono text-[10px] text-slate-400 tabular-nums shrink-0">
+              <Activity
+                className="w-3 h-3 shrink-0"
+                style={{ color: severity.accentCss }}
+                aria-hidden="true"
+              />
+              {severity.heartbeatBpm} ppm
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Top-Center Hover Cue or Diagnostic Toast */}
+      {(diagToast || hoveredLabel) && !selectedPortal && (
+        <div
+          role={diagToast ? 'status' : undefined}
+          className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 max-w-sm bg-slate-950/94 border border-sky-500/70 rounded-lg px-3.5 py-2 text-xs text-slate-100 text-center"
+        >
+          {diagToast ?? hoveredLabel}
+        </div>
+      )}
+
+      {/* Top-Right Live 2D Architectural Minimap */}
+      <div
+        aria-label="Minimapa del laberinto"
+        className="absolute top-3 right-3 bg-slate-950/92 border border-slate-700/90 rounded-lg p-1.5"
+      >
+        <svg width={mapWidth} height={mapHeight} viewBox={`0 0 ${mapWidth} ${mapHeight}`}>
+          {/* Walkable corridors & chambers */}
+          {layout.walkableBoxes.map((box) => {
+            const x = toMapX(box.minX);
+            const y = toMapY(box.minZ);
+            const w = Math.max(2, (box.maxX - box.minX) * mapScale);
+            const h = Math.max(2, (box.maxZ - box.minZ) * mapScale);
+            return (
+              <rect
+                key={box.id}
+                x={x}
+                y={y}
+                width={w}
+                height={h}
+                fill="#1e293b"
+                stroke="#475569"
+                strokeWidth="0.75"
+              />
+            );
+          })}
+
+          {/* Diagnostic stations (Oncologist) */}
+          {layout.diagnosticStations.map((st) => (
+            <rect
+              key={st.id}
+              x={toMapX(st.x) - 2.5}
+              y={toMapY(st.z) - 2.5}
+              width={5}
+              height={5}
+              fill={st.completed ? '#10b981' : '#38bdf8'}
+            />
+          ))}
+
+          {/* Portals */}
+          {layout.portals.map((portal) => (
+            <circle
+              key={portal.id}
+              cx={toMapX(portal.x)}
+              cy={toMapY(portal.z)}
+              r={portal.status === 'active' ? 3.5 : 2.3}
+              fill={
+                portal.status === 'sealed'
+                  ? '#475569'
+                  : portal.status === 'chosen'
+                    ? '#94a3b8'
+                    : portal.accentCss
+              }
+            />
+          ))}
+
+          {/* Player position & heading indicator */}
+          <g
+            transform={`translate(${toMapX(playerPose.x)}, ${toMapY(playerPose.z)}) rotate(${
+              (-playerPose.yaw * 180) / Math.PI
+            })`}
+          >
+            <polygon points="0,-6 4,4 0,2 -4,4" fill="#f8fafc" />
+          </g>
+        </svg>
+      </div>
+
+      {/* Interactive Branch Confirmation Overlay (essential info only) */}
+      {selectedPortal && activePortalDetails && !state.finished && (
+        <div
+          role="dialog"
+          aria-label={`Confirmar bifurcación: ${activePortalDetails.title}`}
+          className="absolute bottom-14 left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:w-[440px] bg-slate-950/96 border border-slate-600 rounded-xl p-4 text-slate-100"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex items-start gap-2">
+              <span
+                className="w-2.5 h-2.5 mt-1 rounded-xs shrink-0"
+                style={{ backgroundColor: selectedPortal.accentCss }}
+                aria-hidden="true"
+              />
+              <h3
+                data-testid="portal-dialog-full-title"
+                className="text-sm font-bold text-white leading-snug"
+              >
+                {activePortalDetails.title}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedPortal(null);
+                setDoorLockState(null);
+              }}
+              aria-label="Cerrar"
+              className="p-1 text-slate-400 hover:text-white rounded cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <p className="mt-1.5 text-xs text-slate-300 leading-snug">
+            {activePortalDetails.summary}
+          </p>
+          <div className="mt-1 text-[11px] font-mono text-slate-400">
+            {activePortalDetails.costTag}
+          </div>
+
+          {/* Prediction gate required to unlock the door */}
+          <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-1.5">
+            <div className="text-[11px] font-semibold text-slate-300">
+              Predicción para abrir la puerta
+            </div>
+            <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+              {activePortalDetails.predictions.map((pred) => {
+                const isSelected = selectedPredictionId === pred.id;
+                const isRejected = Boolean(activeDoorLock?.rejectedIds.includes(pred.id));
+                return (
+                  <button
+                    key={pred.id}
+                    type="button"
+                    onClick={() => setSelectedPredictionId(pred.id)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors flex items-start justify-between gap-2 cursor-pointer ${
+                      isSelected
+                        ? isRejected
+                          ? 'bg-rose-950/80 border-rose-400 text-rose-100 font-medium'
+                          : 'bg-slate-800 border-sky-400 text-white font-medium'
+                        : isRejected
+                          ? 'bg-slate-900/70 border-rose-800/80 text-rose-300/85 hover:border-rose-600'
+                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    <span>{pred.label}</span>
+                    {isRejected && (
+                      <Lock
+                        className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-400"
+                        aria-label="Predicción descartada"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeDoorLock && (
+              <div
+                role="alert"
+                data-testid="door-locked-alert"
+                className="mt-2 p-2.5 rounded-lg bg-rose-950/90 border border-rose-500/75 text-xs text-rose-100 space-y-1"
+              >
+                <div className="font-semibold text-rose-200 inline-flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 shrink-0 text-rose-400" aria-hidden="true" />
+                  <span>Puerta bloqueada</span>
+                </div>
+                <p className="text-[11px] text-rose-100/90 leading-snug">
+                  {activeDoorLock.feedback}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedPortal(null);
+                setDoorLockState(null);
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={!selectedPredictionId}
+              onClick={handleConfirmBranch}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                selectedPredictionId
+                  ? state.mode === 'cancer'
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer'
+                    : 'bg-sky-600 hover:bg-sky-500 text-white cursor-pointer'
+                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+              }`}
+            >
+              <span>Abrir puerta</span>
+              <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Context Lost Notice */}
+      {contextLost && (
+        <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center p-4 text-center">
+          <p className="text-xs text-slate-300 font-mono">
+            Restaurando contexto WebGL del laberinto…
+          </p>
+        </div>
+      )}
+
+      {/* Compact Single-Row Bottom-Right Control Dock (Decisions are accessed solely via 3D doors) */}
+      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-end gap-2 pointer-events-none">
+        {/* Camera / Zoom / Resolution / Sound / Optional Expand Toggles */}
+        <div className="pointer-events-auto flex items-center gap-0.5 bg-slate-950/92 border border-slate-700/90 rounded-lg p-1 text-[11px] text-slate-200 shrink-0">
+          <button
+            type="button"
+            onClick={() =>
+              setCameraMode((prev) => (prev === 'first_person' ? 'aerial' : 'first_person'))
+            }
+            className="px-2 py-1 rounded hover:bg-slate-800 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+            title="Cambiar cámara (tecla V)"
+          >
+            <Eye className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+            <span>{cameraMode === 'first_person' ? 'Aérea' : '1ª Pers.'}</span>
+          </button>
+
+          {/* Zoom In / Zoom Out Control */}
+          <div
+            role="group"
+            aria-label="Zoom del laberinto"
+            className="flex items-center gap-0.5 px-1 border-l border-slate-800"
+          >
+            <button
+              type="button"
+              disabled={zoomLevel <= LABYRINTH_ZOOM_MIN}
+              onClick={() => setZoomLevel((prev) => stepLabyrinthZoom(prev, -1))}
+              aria-label="Alejar zoom"
+              data-testid="zoom-out-btn"
+              className="p-1 rounded hover:bg-slate-800 disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+              title="Alejar zoom (−)"
+            >
+              <ZoomOut className="w-3.5 h-3.5 text-slate-300" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomLevel(LABYRINTH_ZOOM_DEFAULT)}
+              data-testid="zoom-reset-btn"
+              className="px-1.5 py-1 rounded hover:bg-slate-800 font-mono text-[11px] tabular-nums text-slate-200 cursor-pointer whitespace-nowrap"
+              title="Restablecer zoom al 100% (tecla 0)"
+            >
+              {Math.round(zoomLevel * 100)}%
+            </button>
+            <button
+              type="button"
+              disabled={zoomLevel >= LABYRINTH_ZOOM_MAX}
+              onClick={() => setZoomLevel((prev) => stepLabyrinthZoom(prev, 1))}
+              aria-label="Acercar zoom"
+              data-testid="zoom-in-btn"
+              className="p-1 rounded hover:bg-slate-800 disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+              title="Acercar zoom (+)"
+            >
+              <ZoomIn className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+            </button>
+          </div>
+
+          {/* Multi-step Resolution Control: Baja -> Media -> Alta -> Ultra */}
+          <div
+            role="group"
+            aria-label="Resolución del laberinto"
+            className="flex items-center gap-0.5 px-1 border-x border-slate-800"
+          >
+            <button
+              type="button"
+              disabled={resolutionLevel === 'low'}
+              onClick={() => setResolutionLevel((prev) => stepLabyrinthResolution(prev, -1))}
+              aria-label="Reducir resolución del laberinto"
+              data-testid="decrease-resolution-btn"
+              className="p-1 rounded hover:bg-slate-800 disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+              title="Reducir resolución"
+            >
+              <Minus className="w-3 h-3 text-slate-300" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setResolutionLevel((prev) =>
+                  prev === 'ultra' ? 'low' : stepLabyrinthResolution(prev, 1)
+                )
+              }
+              data-testid="resolution-label-btn"
+              className="px-1.5 py-1 rounded hover:bg-slate-800 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              title="Cambiar resolución del laberinto (Baja / Media / Alta / Ultra)"
+            >
+              <Monitor className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
+              <span className="font-mono">{resolutionPreset.label}</span>
+            </button>
+            <button
+              type="button"
+              disabled={resolutionLevel === 'ultra'}
+              onClick={() => setResolutionLevel((prev) => stepLabyrinthResolution(prev, 1))}
+              aria-label="Aumentar resolución del laberinto"
+              data-testid="increase-resolution-btn"
+              className="p-1 rounded hover:bg-slate-800 disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+              title="Aumentar resolución"
+            >
+              <Plus className="w-3 h-3 text-amber-400" aria-hidden="true" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMuted((prev) => !prev)}
+            aria-label={muted ? 'Activar sonido' : 'Silenciar sonido'}
+            className="p-1 rounded hover:bg-slate-800 cursor-pointer"
+            title="Sonido (tecla M)"
+          >
+            {muted ? (
+              <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+            )}
+          </button>
+
+          {onToggleExpand && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              aria-label={isExpanded ? 'Salir de pantalla completa 3D' : 'Expandir laberinto 3D'}
+              className="px-2 py-1 rounded hover:bg-slate-800 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              title={isExpanded ? 'Volver a vista de 3 paneles' : 'Expandir laberinto 3D'}
+            >
+              {isExpanded ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-slate-300" aria-hidden="true" />
+                  <span>Paneles</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-slate-300" aria-hidden="true" />
+                  <span>Expandir</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
