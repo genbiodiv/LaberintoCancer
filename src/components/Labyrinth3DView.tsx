@@ -13,6 +13,8 @@ import {
   Minus,
   Monitor,
   Plus,
+  RotateCcw,
+  Smartphone,
   Volume2,
   VolumeX,
   X,
@@ -49,6 +51,14 @@ import {
   formatBiologyText,
   getTherapyDisplayName,
 } from '../engine/molecularAbstraction';
+import {
+  combineControlInputs,
+  computeKeyboardControlInput,
+  computeMotionControlInput,
+  createMotionCalibration,
+  MotionCalibration,
+  normalizeDirectionKey,
+} from '../engine/motionControls';
 import { getActiveRoundOffer, shuffleRandom } from '../engine/progressionEngine';
 import { evaluatePredictionGate } from '../engine/simulator';
 import {
@@ -171,6 +181,18 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   const [diagToast, setDiagToast] = useState<string | null>(null);
   const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
   const [contextLost, setContextLost] = useState<boolean>(false);
+  const [motionSensorActive, setMotionSensorActive] = useState<boolean>(false);
+
+  // Mobile DeviceOrientation motion sensor refs (zero React re-renders inside sensor events)
+  const motionActiveRef = useRef<boolean>(false);
+  motionActiveRef.current = motionSensorActive;
+  const motionCalibrationRef = useRef<MotionCalibration | null>(null);
+  const motionOrientationRef = useRef<{ beta: number | null; gamma: number | null }>({
+    beta: null,
+    gamma: null,
+  });
+  const motionReceivedReadingRef = useRef<boolean>(false);
+  const motionFallbackTimerRef = useRef<number | null>(null);
 
   // Minimap player telemetry (throttled ~12Hz so React stays ultra-light)
   const [playerPose, setPlayerPose] = useState<{ x: number; z: number; yaw: number }>({
@@ -291,12 +313,102 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     audioRef.current?.setSeverity(state.clinical.tumorBurden, state.mode);
   }, [state.clinical.tumorBurden, state.mode]);
 
-  // Clear diagnostic toast after a short interval
+  // Clear diagnostic / sensor toast after a short interval
   useEffect(() => {
     if (!diagToast) return;
     const t = window.setTimeout(() => setDiagToast(null), 4600);
     return () => window.clearTimeout(t);
   }, [diagToast]);
+
+  // Attach/detach mobile DeviceOrientation motion sensor listener cleanly
+  useEffect(() => {
+    if (!motionSensorActive) {
+      motionCalibrationRef.current = null;
+      motionOrientationRef.current = { beta: null, gamma: null };
+      motionReceivedReadingRef.current = false;
+      if (motionFallbackTimerRef.current !== null) {
+        window.clearTimeout(motionFallbackTimerRef.current);
+        motionFallbackTimerRef.current = null;
+      }
+      return;
+    }
+
+    const onDeviceOrientation = (e: DeviceOrientationEvent) => {
+      if (typeof e.beta !== 'number' || typeof e.gamma !== 'number') return;
+      motionOrientationRef.current = { beta: e.beta, gamma: e.gamma };
+      if (!motionReceivedReadingRef.current) {
+        motionReceivedReadingRef.current = true;
+        motionCalibrationRef.current = createMotionCalibration(e.beta, e.gamma);
+        if (motionFallbackTimerRef.current !== null) {
+          window.clearTimeout(motionFallbackTimerRef.current);
+          motionFallbackTimerRef.current = null;
+        }
+      }
+    };
+
+    window.addEventListener('deviceorientation', onDeviceOrientation, { passive: true });
+    motionFallbackTimerRef.current = window.setTimeout(() => {
+      if (!motionReceivedReadingRef.current) {
+        setDiagToast(
+          'Sensor activo esperando giroscopio. En computador usa las flechas ↑ ↓ ← → o arrastra.'
+        );
+      }
+    }, 1800);
+
+    return () => {
+      window.removeEventListener('deviceorientation', onDeviceOrientation);
+      if (motionFallbackTimerRef.current !== null) {
+        window.clearTimeout(motionFallbackTimerRef.current);
+        motionFallbackTimerRef.current = null;
+      }
+    };
+  }, [motionSensorActive]);
+
+  const handleToggleMotionSensor = useCallback(async () => {
+    audioRef.current?.ensureAmbientStarted();
+    if (motionSensorActive) {
+      setMotionSensorActive(false);
+      setDiagToast('Sensor de movimiento desactivado');
+      return;
+    }
+
+    if (typeof window === 'undefined' || !('DeviceOrientationEvent' in window)) {
+      setDiagToast(
+        'Sensor de movimiento no disponible en este navegador. Usa las flechas ↑ ↓ ← → o arrastra.'
+      );
+      return;
+    }
+
+    const devOrient = window.DeviceOrientationEvent as unknown as {
+      requestPermission?: () => Promise<'granted' | 'denied'>;
+    };
+    if (typeof devOrient?.requestPermission === 'function') {
+      try {
+        const result = await devOrient.requestPermission();
+        if (result !== 'granted') {
+          setDiagToast(
+            'Permiso de sensor denegado. Puedes moverte arrastrando la pantalla o con flechas.'
+          );
+          return;
+        }
+      } catch {
+        setDiagToast('No se pudo activar el sensor de movimiento en este dispositivo.');
+        return;
+      }
+    }
+
+    motionCalibrationRef.current = null;
+    motionReceivedReadingRef.current = false;
+    setMotionSensorActive(true);
+    setDiagToast('Sensor de movimiento activo · Inclina el móvil para caminar y girar');
+  }, [motionSensorActive]);
+
+  const handleRecalibrateMotionSensor = useCallback(() => {
+    if (!motionSensorActive) return;
+    const { beta, gamma } = motionOrientationRef.current;
+    motionCalibrationRef.current = createMotionCalibration(beta, gamma);
+    setDiagToast('Posición neutra del sensor recalibrada');
+  }, [motionSensorActive]);
 
   // Rebuild world geometry inside the persistent Three.js scene when layout/mode/theme/severity changes
   const rebuildWorld = useCallback(
@@ -810,13 +922,12 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
       audioRef.current?.ensureAmbientStarted();
-      if (
-        ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
-          e.code
-        )
-      ) {
-        heldKeys.add(e.code);
-        if (e.code.startsWith('Arrow')) e.preventDefault();
+      const dirToken = normalizeDirectionKey(e.code, e.key);
+      if (dirToken) {
+        heldKeys.add(dirToken);
+        if (dirToken.startsWith('Arrow')) {
+          e.preventDefault();
+        }
       } else if (e.code === 'KeyV') {
         setCameraMode((prev) => (prev === 'first_person' ? 'aerial' : 'first_person'));
       } else if (e.code === 'KeyM') {
@@ -833,7 +944,12 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      heldKeys.delete(e.code);
+      const dirToken = normalizeDirectionKey(e.code, e.key);
+      if (dirToken) {
+        heldKeys.delete(dirToken);
+      } else {
+        heldKeys.delete(e.code);
+      }
     };
 
     const clearKeys = () => heldKeys.clear();
@@ -1010,32 +1126,35 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       const ctx = threeRef.current;
 
       if (ctx) {
-        // 1. Player turning & movement (paused only while reading portal overlay? No, keep free!)
-        const turnSpeed = 2.05;
-        if (heldKeys.has('KeyQ') || (cameraModeRef.current === 'first_person' && heldKeys.has('ArrowLeft'))) {
-          p.yaw += turnSpeed * dt;
-        }
-        if (heldKeys.has('KeyE') || (cameraModeRef.current === 'first_person' && heldKeys.has('ArrowRight'))) {
-          p.yaw -= turnSpeed * dt;
-        }
+        // 1. Combined desktop arrow/WASD + mobile DeviceOrientation motion sensor controls
+        const kbInput = computeKeyboardControlInput(heldKeys, cameraModeRef.current);
+        const screenAngle =
+          typeof window !== 'undefined' && typeof window.screen?.orientation?.angle === 'number'
+            ? window.screen.orientation.angle
+            : 0;
+        const motionInput =
+          motionActiveRef.current && motionCalibrationRef.current
+            ? computeMotionControlInput(
+                motionOrientationRef.current,
+                motionCalibrationRef.current,
+                cameraModeRef.current,
+                screenAngle
+              )
+            : { moveForward: 0, moveRight: 0, turnDelta: 0 };
+        const ctrl = combineControlInputs(kbInput, motionInput);
 
-        let moveForward = 0;
-        let moveRight = 0;
-        if (heldKeys.has('KeyW') || heldKeys.has('ArrowUp')) moveForward += 1;
-        if (heldKeys.has('KeyS') || heldKeys.has('ArrowDown')) moveForward -= 1;
-        if (heldKeys.has('KeyD') || (cameraModeRef.current === 'aerial' && heldKeys.has('ArrowRight'))) {
-          moveRight += 1;
-        }
-        if (heldKeys.has('KeyA') || (cameraModeRef.current === 'aerial' && heldKeys.has('ArrowLeft'))) {
-          moveRight -= 1;
+        const turnSpeed = 2.05;
+        if (Math.abs(ctrl.turnDelta) > 0.001) {
+          p.yaw += ctrl.turnDelta * turnSpeed * dt;
         }
 
         const speed = 5.4;
-        if (moveForward !== 0 || moveRight !== 0) {
-          const len = Math.hypot(moveForward, moveRight);
-          const nf = moveForward / len;
-          const nr = moveRight / len;
-          // In aerial view, WASD moves along world cardinal axes; in 1st-person, relative to yaw
+        const mag = Math.hypot(ctrl.moveForward, ctrl.moveRight);
+        if (mag > 0.001) {
+          const clampedMag = Math.min(1, mag);
+          const nf = (ctrl.moveForward / mag) * clampedMag;
+          const nr = (ctrl.moveRight / mag) * clampedMag;
+          // In aerial view, movement follows world cardinal axes; in 1st-person, relative to yaw
           const refYaw = cameraModeRef.current === 'aerial' ? 0 : p.yaw;
           const fwdX = -Math.sin(refYaw);
           const fwdZ = -Math.cos(refYaw);
@@ -1386,11 +1505,15 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       data-zoom-level={Math.round(zoomLevel * 100)}
       data-low-res={resolutionLevel === 'low' ? 'true' : 'false'}
       data-resolution-level={resolutionLevel}
+      data-motion-sensor={motionSensorActive ? 'active' : 'off'}
+      data-player-x={playerPose.x.toFixed(2)}
+      data-player-z={playerPose.z.toFixed(2)}
+      data-player-yaw={playerPose.yaw.toFixed(2)}
       data-canvas-width={renderBufferDims.w}
       data-canvas-height={renderBufferDims.h}
     >
-      {/* Isolated WebGL Canvas Mount */}
-      <div ref={mountRef} className="w-full h-full" />
+      {/* Isolated WebGL Canvas Mount (touch-none ensures smooth mobile drag without page scroll) */}
+      <div ref={mountRef} className="w-full h-full touch-none" />
 
       {/* Peripheral crimson urgency vignette at high/critical cancer severity (pure CSS, no backdrop-filter) */}
       {severity.vignetteOpacity > 0 && (
@@ -1419,7 +1542,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           </button>
         )}
 
-        <div className="w-[248px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 space-y-1.5">
+        <div className="w-[218px] sm:w-[248px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 space-y-1.5">
           <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
             <span className="inline-flex items-center gap-1.5">
               <Compass
@@ -1481,11 +1604,11 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         </div>
       </div>
 
-      {/* Top-Center Hover Cue or Diagnostic Toast */}
+      {/* Hover Cue or Diagnostic / Sensor Toast (clears top HUD & minimap on mobile) */}
       {(diagToast || hoveredLabel) && !selectedPortal && (
         <div
           role={diagToast ? 'status' : undefined}
-          className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 max-w-sm bg-slate-950/94 border border-sky-500/70 rounded-lg px-3.5 py-2 text-xs text-slate-100 text-center"
+          className="pointer-events-none absolute bottom-24 left-3 right-3 sm:bottom-auto sm:top-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:max-w-sm bg-slate-950/94 border border-sky-500/70 rounded-lg px-3.5 py-2 text-xs text-slate-100 text-center"
         >
           {diagToast ?? hoveredLabel}
         </div>
@@ -1690,10 +1813,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         </div>
       )}
 
-      {/* Compact Single-Row Bottom-Right Control Dock (Decisions are accessed solely via 3D doors) */}
-      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-end gap-2 pointer-events-none">
-        {/* Camera / Zoom / Resolution / Sound / Optional Expand Toggles */}
-        <div className="pointer-events-auto flex items-center gap-0.5 bg-slate-950/92 border border-slate-700/90 rounded-lg p-1 text-[11px] text-slate-200 shrink-0">
+      {/* Compact Bottom-Right Control Dock (wraps cleanly on narrow mobile screens; single row on desktop) */}
+      <div className="absolute bottom-3 left-2 right-2 sm:left-3 sm:right-3 flex items-center justify-end gap-2 pointer-events-none">
+        {/* Camera / Sensor / Zoom / Resolution / Sound / Optional Expand Toggles */}
+        <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-0.5 max-w-full bg-slate-950/92 border border-slate-700/90 rounded-lg p-1 text-[11px] text-slate-200">
           <button
             type="button"
             onClick={() =>
@@ -1705,6 +1828,41 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             <Eye className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
             <span>{cameraMode === 'first_person' ? 'Aérea' : '1ª Pers.'}</span>
           </button>
+
+          {/* Mobile Motion Sensor Toggle + Quick Recalibrate */}
+          <div
+            role="group"
+            aria-label="Sensor de movimiento móvil"
+            className="flex items-center gap-0.5 px-1 border-l border-slate-800"
+          >
+            <button
+              type="button"
+              onClick={() => void handleToggleMotionSensor()}
+              aria-pressed={motionSensorActive}
+              data-testid="motion-sensor-btn"
+              className={`px-2 py-1 rounded inline-flex items-center gap-1 cursor-pointer whitespace-nowrap transition-colors ${
+                motionSensorActive
+                  ? 'bg-sky-600 text-white hover:bg-sky-500'
+                  : 'hover:bg-slate-800 text-slate-200'
+              }`}
+              title="Activar o desactivar sensor de movimiento (móvil)"
+            >
+              <Smartphone className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>{motionSensorActive ? 'Sensor ON' : 'Sensor'}</span>
+            </button>
+            {motionSensorActive && (
+              <button
+                type="button"
+                onClick={handleRecalibrateMotionSensor}
+                aria-label="Recalibrar sensor de movimiento"
+                data-testid="motion-recalibrate-btn"
+                className="p-1 rounded hover:bg-slate-800 text-sky-300 cursor-pointer"
+                title="Recalibrar ángulo neutro del sensor"
+              >
+                <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
 
           {/* Zoom In / Zoom Out Control */}
           <div

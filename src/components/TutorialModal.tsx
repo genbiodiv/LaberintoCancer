@@ -34,11 +34,12 @@ const SLIDES = [
   },
   {
     icon: Microscope,
-    title: '3. Cómo avanzar',
+    title: '3. Cómo avanzar y moverte',
     body: 'Recorre el laberinto de forma continua hasta completar el objetivo de tu rol.',
     points: [
-      'Acércate o haz clic en una puerta del laberinto y acierta la predicción para abrirla.',
-      'Usa el zoom (+ / − o rueda del ratón) y observa cómo el entorno y el sonido reflejan la gravedad del cáncer.',
+      'En computador usa las flechas de dirección (↑ ↓ ← →) o WASD para caminar y girar; en móvil activa el botón Sensor para inclinar tu dispositivo.',
+      'Acércate o toca una puerta del laberinto y acierta la predicción biológica para abrirla.',
+      'Usa el zoom (+ / − o rueda del ratón) y observa cómo el entorno y el latido reflejan la gravedad del cáncer.',
     ],
   },
 ];

@@ -44,7 +44,7 @@ export function exportSimulationReportPdf(state: SimulationState): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(15, 23, 42);
-  doc.text('GenCircuit — Informe de simulación educativa', margin, y);
+  doc.text('El laberinto del cáncer — Informe de simulación educativa', margin, y);
   y += 20;
 
   doc.setFont('helvetica', 'normal');
@@ -136,5 +136,5 @@ export function exportSimulationReportPdf(state: SimulationState): void {
   );
 
   const safeTeam = state.teamName.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 24);
-  doc.save(`GenCircuit_${state.scenarioId}_${state.mode}_${safeTeam || 'Equipo'}.pdf`);
+  doc.save(`El_laberinto_del_cancer_${state.mode}_${safeTeam || 'Equipo'}.pdf`);
 }

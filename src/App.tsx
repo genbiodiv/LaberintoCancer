@@ -15,6 +15,7 @@ import { Labyrinth3DView } from './components/Labyrinth3DView';
 import { MolecularCanvas, StageViewTab } from './components/MolecularCanvas';
 import { OncologistPanel } from './components/OncologistPanel';
 import { ReportView } from './components/ReportView';
+import { SplashScreen } from './components/SplashScreen';
 import { StartScreen } from './components/StartScreen';
 import { TeacherModal } from './components/TeacherModal';
 import { TurnFeedbackModal } from './components/TurnFeedbackModal';
@@ -59,7 +60,7 @@ import {
   saveTeacherConfig,
 } from './utils/storage';
 
-type ScreenView = 'start' | 'playing' | 'report' | 'compare';
+type ScreenView = 'splash' | 'start' | 'playing' | 'report' | 'compare';
 
 export default function App() {
   const [teacherConfig, setTeacherConfig] = useState<TeacherConfig>(() => loadTeacherConfig());
@@ -74,9 +75,9 @@ export default function App() {
   const [playMode, setPlayMode] = useState<PlayMode>('labyrinth');
   const [molecularDetail, setMolecularDetail] = useState<MolecularDetailMode>('logic');
 
-  // Active simulation & view state
+  // Active simulation & view state (starts on Splash page with instructions)
   const [session, setSession] = useState<SimulationState | null>(() => loadActiveSession());
-  const [view, setView] = useState<ScreenView>('start');
+  const [view, setView] = useState<ScreenView>('splash');
   const [stageTab, setStageTab] = useState<StageViewTab>('network');
   const [isLabyrinthExpanded, setIsLabyrinthExpanded] = useState<boolean>(false);
   const [pendingResolution, setPendingResolution] = useState<TurnResolution | null>(null);
@@ -300,6 +301,8 @@ export default function App() {
 
   return (
     <>
+      {view === 'splash' && <SplashScreen onContinue={() => setView('start')} />}
+
       {view === 'start' && (
         <StartScreen
           playMode={playMode}
@@ -307,6 +310,7 @@ export default function App() {
           molecularDetail={molecularDetail}
           onMolecularDetailChange={setMolecularDetail}
           onStartMode={(m) => handleStartMode(m)}
+          onOpenSplash={() => setView('splash')}
           onOpenTutorial={() => setTutorialOpen(true)}
           savedSession={session}
           onResumeSession={handleResume}
@@ -368,7 +372,7 @@ export default function App() {
                     aria-hidden="true"
                   />
                   <span className="text-base font-bold tracking-tight text-slate-900">
-                    GenCircuit
+                    El laberinto del cáncer
                   </span>
                 </div>
                 <span className="hidden sm:inline text-slate-300" aria-hidden="true">

@@ -26,6 +26,7 @@ interface StartScreenProps {
   molecularDetail: MolecularDetailMode;
   onMolecularDetailChange: (v: MolecularDetailMode) => void;
   onStartMode: (mode: GameMode) => void;
+  onOpenSplash: () => void;
   onOpenTutorial: () => void;
   savedSession: SimulationState | null;
   onResumeSession: () => void;
@@ -39,6 +40,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   molecularDetail,
   onMolecularDetailChange,
   onStartMode,
+  onOpenSplash,
   onOpenTutorial,
   savedSession,
   onResumeSession,
@@ -55,11 +57,20 @@ export const StartScreen: React.FC<StartScreenProps> = ({
       <header className="w-full border-b border-slate-200 bg-white">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between gap-8">
           <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
-            <Dna className="w-5 h-5 text-sky-600" aria-hidden="true" />
-            <span className="text-lg font-bold tracking-tight text-slate-900">GenCircuit</span>
+            <Dna className="w-5 h-5 text-rose-600" aria-hidden="true" />
+            <span className="text-lg font-bold tracking-tight text-slate-900">
+              El laberinto del cáncer
+            </span>
           </div>
 
           <nav className="flex items-center gap-5 text-sm font-medium text-slate-600">
+            <button
+              type="button"
+              onClick={onOpenSplash}
+              className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              Instrucciones
+            </button>
             <button
               type="button"
               onClick={onOpenTutorial}
@@ -87,7 +98,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         {/* Title & Essential Subtitle */}
         <section className="space-y-2.5 max-w-2xl">
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 [text-wrap:balance]">
-            Evolución y control del cáncer
+            El laberinto del cáncer
           </h1>
           <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
             Elige tu rol y recorre el laberinto tomando decisiones biológicas paso a paso hasta
