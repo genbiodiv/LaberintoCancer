@@ -95,16 +95,8 @@ export function exportSimulationReportPdf(state: SimulationState): void {
     .join(' · ');
   addParagraph(topHallmarks, 'Hallmarks predominantes (Hanahan, Cell 2026):');
 
-  // Molecular model (if Oncologist)
-  if (state.mode === 'oncologist' && state.cellModel.submitted) {
-    addHeading('3. Modelo molecular construido por el equipo');
-    addParagraph(
-      `Impulsor principal: ${state.cellModel.primaryDriver || 'No indicado'} · Control debilitado: ${state.cellModel.weakenedControl || 'No indicado'} · Control intacto: ${state.cellModel.intactControl || 'No indicado'} · Vulnerabilidad: ${state.cellModel.exploitableVulnerability || 'No indicada'} (Concordancia: ${state.cellModel.accuracyScore}%).`
-    );
-  }
-
   // Turn history
-  addHeading('4. Registro de rondas y decisiones');
+  addHeading('3. Registro de rondas y decisiones');
   state.history.forEach((entry) => {
     addParagraph(
       `Ronda ${entry.roundNumber} (${entry.eventTitle}) — Acción: ${entry.actionTakenLabel}. ${entry.whatHappened} Genes: ${entry.genesInvolved.join(', ')}.`
@@ -112,7 +104,7 @@ export function exportSimulationReportPdf(state: SimulationState): void {
   });
 
   // Reflection questions
-  addHeading('5. Preguntas de integración del equipo');
+  addHeading('4. Preguntas de integración del equipo');
   addParagraph(
     state.reflections.q1KeyAlterations.trim() || '(Sin respuesta registrada)',
     'P1. ¿Cuáles fueron las alteraciones o interacciones moleculares más importantes para explicar el resultado?'
@@ -127,7 +119,7 @@ export function exportSimulationReportPdf(state: SimulationState): void {
   );
 
   // Evidence footer
-  addHeading('6. Fuentes científicas y descargo educativo');
+  addHeading('5. Fuentes científicas y descargo educativo');
   addParagraph(
     'Hanahan D. Hallmarks of cancer—Then and now, and beyond. Cell. 2026. DOI: 10.1016/j.cell.2025.12.049.'
   );

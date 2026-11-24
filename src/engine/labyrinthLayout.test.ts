@@ -34,13 +34,20 @@ test('labyrinth layout spawns player inside open walkable corridor facing 3 fork
   }
 });
 
-test('oncologist mode places 4 diagnostic stations inside the active chamber', () => {
-  const onco = createInitialSimulation('oncologist', 'UNIFIED', '', 'quick', undefined, 5, 2002);
-  const layout = buildLabyrinthLayout(onco);
+test('oncologist mode alternates 3 diagnostic doors on odd rounds and 3 intervention doors on even rounds with zero side-wall consoles', () => {
+  const r1State = createInitialSimulation('oncologist', 'UNIFIED', '', 'quick', undefined, 5, 2002);
+  const r1Layout = buildLabyrinthLayout(r1State);
 
-  assert.equal(layout.diagnosticStations.length, 4);
-  assert.equal(layout.portals.length, 3);
-  assert.ok(layout.diagnosticStations.every((d) => !d.completed));
+  assert.equal(r1Layout.diagnosticStations.length, 0);
+  assert.equal(r1Layout.portals.length, 3);
+  assert.ok(r1Layout.portals.every((p) => p.portalKind === 'diagnostic'));
+
+  const r2State = { ...r1State, currentRound: 2 };
+  const r2Layout = buildLabyrinthLayout(r2State);
+  const r2Active = r2Layout.portals.filter((p) => p.status === 'active');
+  assert.equal(r2Layout.diagnosticStations.length, 0);
+  assert.equal(r2Active.length, 3);
+  assert.ok(r2Active.every((p) => p.portalKind === 'intervention'));
 });
 
 test('collision resolver slides smoothly inside corridor and blocks walking through walls', () => {

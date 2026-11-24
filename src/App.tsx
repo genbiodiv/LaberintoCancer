@@ -33,9 +33,9 @@ import {
   comparePerspectiveRuns,
   createInitialSimulation,
   resolveCancerTurn,
+  resolveOncologistDiagnosticTurn,
+  resolveOncologistObservationTurn,
   resolveOncologistTurn,
-  runDiagnosticTool,
-  submitOncologistCellModel,
 } from './engine/simulator';
 import {
   CompletedRunSummary,
@@ -206,26 +206,33 @@ export default function App() {
     }
   };
 
-  const handleRunDiagnostic = (toolId: DiagnosticToolId): string | null => {
-    if (!session) return null;
-    const { nextState, message, error } = runDiagnosticTool(session, toolId);
-    if (error) return error;
-    setSession(nextState);
-    return message;
-  };
-
-  const handleSubmitModel = (draft: {
-    primaryDriver: string;
-    weakenedControl: string;
-    intactControl: string;
-    exploitableVulnerability: string;
-  }) => {
+  const handleOncologistDiagnostic = (toolId: DiagnosticToolId) => {
     if (!session) return;
-    const nextState = submitOncologistCellModel(session, draft);
+    const { nextState, resolution } = resolveOncologistDiagnosticTurn(session, toolId);
     setSession(nextState);
+    setPendingResolution(resolution);
+    if (nextState.finished) {
+      const updatedRuns = saveCompletedRun(
+        buildCompletedRunSummary(nextState, { playMode, molecularDetail })
+      );
+      setCompletedRuns(updatedRuns);
+    }
   };
 
-  const handleOncologistTurn = (therapyId: TherapyId, predictionId: string) => {
+  const handleOncologistObservation = () => {
+    if (!session) return;
+    const { nextState, resolution } = resolveOncologistObservationTurn(session);
+    setSession(nextState);
+    setPendingResolution(resolution);
+    if (nextState.finished) {
+      const updatedRuns = saveCompletedRun(
+        buildCompletedRunSummary(nextState, { playMode, molecularDetail })
+      );
+      setCompletedRuns(updatedRuns);
+    }
+  };
+
+  const handleOncologistTurn = (therapyId: TherapyId, predictionId: string = '') => {
     if (!session) return;
     const { nextState, resolution } = resolveOncologistTurn(session, therapyId, predictionId);
     setSession(nextState);
@@ -337,7 +344,8 @@ export default function App() {
             onSwitchToText={() => handlePlayModeChange('text')}
             onResolveCancerTurn={handleCancerTurn}
             onResolveOncologistTurn={handleOncologistTurn}
-            onRunDiagnostic={handleRunDiagnostic}
+            onResolveOncologistDiagnostic={handleOncologistDiagnostic}
+            onResolveOncologistObservation={handleOncologistObservation}
           />
 
           <TurnFeedbackModal
@@ -486,9 +494,9 @@ export default function App() {
                   <OncologistPanel
                     state={session}
                     molecularDetail={molecularDetail}
-                    onRunDiagnostic={handleRunDiagnostic}
-                    onSubmitModel={handleSubmitModel}
-                    onResolveTurn={handleOncologistTurn}
+                    onResolveDiagnostic={handleOncologistDiagnostic}
+                    onResolveIntervention={(therapyId) => handleOncologistTurn(therapyId, '')}
+                    onResolveObservation={handleOncologistObservation}
                   />
                 )}
               </div>
@@ -515,7 +523,8 @@ export default function App() {
                 onToggleLabyrinthExpand={() => setIsLabyrinthExpanded((prev) => !prev)}
                 onResolveCancerTurn={handleCancerTurn}
                 onResolveOncologistTurn={handleOncologistTurn}
-                onRunDiagnostic={handleRunDiagnostic}
+                onResolveOncologistDiagnostic={handleOncologistDiagnostic}
+                onResolveOncologistObservation={handleOncologistObservation}
                 mode={session.mode}
                 clones={session.clones}
                 revealedGenes={session.revealedGenes}

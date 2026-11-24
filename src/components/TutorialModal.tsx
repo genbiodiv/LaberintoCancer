@@ -20,7 +20,7 @@ const SLIDES = [
     body: 'Cáncer y Oncólogo operan sobre el mismo motor molecular.',
     points: [
       'Cáncer: supera barreras fisiológicas del organismo hasta llegar al 100% de cáncer.',
-      'Oncólogo: investiga, trata y protege al paciente hasta el 100% de liberación.',
+      'Oncólogo: alterna rondas de diagnóstico e intervención (o salta en observación) hasta el 100% de liberación.',
     ],
   },
   {
@@ -28,8 +28,8 @@ const SLIDES = [
     title: '2. Selección clonal',
     body: 'Las variantes surgen por alteraciones celulares; las barreras biológicas (o las terapias en modo Oncólogo) seleccionan qué clones crecen.',
     points: [
-      'Cada ventaja celular conlleva un costo metabólico o inmunológico.',
-      'En modo Oncólogo, tratar sin precisión eleva la toxicidad.',
+      'Cada decisión muestra de inmediato sus ramificaciones moleculares, clonales y clínicas.',
+      'En modo Oncólogo puedes pulsar Observación en cualquier ronda para descansar y ver la evolución natural.',
     ],
   },
   {
@@ -38,7 +38,7 @@ const SLIDES = [
     body: 'Recorre el laberinto de forma continua hasta completar el objetivo de tu rol.',
     points: [
       'En computador usa las flechas de dirección (↑ ↓ ← →) o WASD para caminar y girar; en móvil activa el botón Sensor para inclinar tu dispositivo.',
-      'Acércate o toca una puerta del laberinto y acierta la predicción biológica para abrirla.',
+      'Acércate o toca una puerta del laberinto para abrirla y ver el impacto en las poblaciones celulares.',
       'Usa el zoom (+ / − o rueda del ratón) y observa cómo el entorno y el latido reflejan la gravedad del cáncer.',
     ],
   },

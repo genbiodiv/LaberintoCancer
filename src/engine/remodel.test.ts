@@ -28,6 +28,7 @@ import { buildLabyrinthLayout, getOncologistForkTherapies } from './labyrinthLay
 import { THERAPIES_CATALOG } from './knowledgeBase';
 import {
   getActiveRoundOffer,
+  getOncologistRoundPhase,
   PROBLEM_CATALOG,
   shuffleRandom,
 } from './progressionEngine';
@@ -35,6 +36,8 @@ import {
   createInitialSimulation,
   evaluatePredictionGate,
   resolveCancerTurn,
+  resolveOncologistDiagnosticTurn,
+  resolveOncologistObservationTurn,
   resolveOncologistTurn,
 } from './simulator';
 
@@ -617,6 +620,95 @@ test('computeCancerSeverityMetrics escalates visual and acoustic parameters mono
   const severeTheme = getLabyrinthTheme('cancer', 16, 85);
   assert.ok(severeTheme.cracksIntensity > calmTheme.cracksIntensity);
 });
+
+test('Oncologist Mode alternates Diagnostic (odd) and Intervention (even) rounds, supports Observation skip at any round, and reaches 100% liberation', () => {
+  let state = createInitialSimulation('oncologist', 'UNIFIED', '', 'quick', undefined, 6, 909, true);
+
+  // Round 1: Diagnostic
+  assert.equal(getOncologistRoundPhase(state.currentRound), 'diagnostic');
+  const r1Offer = getActiveRoundOffer(state);
+  assert.equal(r1Offer.oncologistPhase, 'diagnostic');
+  assert.equal(r1Offer.oncologistDoorDiagnostics.length, 3);
+  assert.equal(r1Offer.oncologistDoorTherapies.includes('active_surveillance'), false);
+
+  const diagStep = resolveOncologistDiagnosticTurn(state, r1Offer.oncologistDoorDiagnostics[0]);
+  assert.equal(diagStep.resolution.actionKind, 'diagnostic');
+  assert.ok(diagStep.resolution.cellularProcessChanged.length > 10);
+  assert.equal(
+    GENE_SYMBOL_REGEX.test(
+      formatBiologyText(
+        `${diagStep.resolution.whatHappened} ${diagStep.resolution.cellularProcessChanged}`,
+        'logic'
+      )
+    ),
+    false,
+    'Diagnostic turn resolution leaked gene symbol in Lógica mode'
+  );
+  state = diagStep.nextState;
+  assert.equal(state.currentRound, 2);
+
+  // Round 2: Intervention (direct without prediction quiz)
+  assert.equal(getOncologistRoundPhase(state.currentRound), 'intervention');
+  const r2Offer = getActiveRoundOffer(state);
+  assert.equal(r2Offer.oncologistPhase, 'intervention');
+  assert.equal(r2Offer.oncologistDoorTherapies.includes('active_surveillance'), false);
+
+  const intStep = resolveOncologistTurn(state, r2Offer.oncologistDoorTherapies[0]);
+  assert.equal(intStep.resolution.actionKind, 'intervention');
+  assert.equal(intStep.resolution.predictionMatched, true);
+  state = intStep.nextState;
+  assert.equal(state.currentRound, 3);
+
+  // Round 3: Skip Diagnostic round via Observation
+  assert.equal(getOncologistRoundPhase(state.currentRound), 'diagnostic');
+  const obsDiag = resolveOncologistObservationTurn(state);
+  assert.equal(obsDiag.resolution.actionKind, 'observation');
+  assert.equal(
+    GENE_SYMBOL_REGEX.test(
+      formatBiologyText(
+        `${obsDiag.resolution.whatHappened} ${obsDiag.resolution.cellularProcessChanged}`,
+        'logic'
+      )
+    ),
+    false,
+    'Observation turn resolution leaked gene symbol in Lógica mode'
+  );
+  state = obsDiag.nextState;
+  assert.equal(state.currentRound, 4);
+
+  // Round 4: Skip Intervention round via Observation
+  assert.equal(getOncologistRoundPhase(state.currentRound), 'intervention');
+  const obsInt = resolveOncologistObservationTurn(state);
+  assert.equal(obsInt.resolution.actionKind, 'observation');
+  state = obsInt.nextState;
+  assert.equal(state.currentRound, 5);
+
+  // Continue alternating Diagnostic -> Intervention until 100% liberation
+  let safety = 0;
+  while (!state.finished && safety < 30) {
+    safety++;
+    const offer = getActiveRoundOffer(state);
+    if (offer.oncologistPhase === 'diagnostic') {
+      state = resolveOncologistDiagnosticTurn(state, offer.oncologistDoorDiagnostics[0]).nextState;
+    } else {
+      let bestTherapy = offer.oncologistDoorTherapies[0];
+      let bestLib = -Infinity;
+      for (const tid of offer.oncologistDoorTherapies) {
+        const preview = resolveOncologistTurn(state, tid).nextState;
+        if ((preview.oncologistLiberation ?? 0) > bestLib) {
+          bestLib = preview.oncologistLiberation ?? 0;
+          bestTherapy = tid;
+        }
+      }
+      state = resolveOncologistTurn(state, bestTherapy).nextState;
+    }
+  }
+
+  assert.equal(state.finished, true);
+  assert.equal(state.oncologistLiberation, 100);
+  assert.equal(state.clinical.tumorBurden, 0);
+});
+
 
 
 

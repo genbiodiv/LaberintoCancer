@@ -1,5 +1,7 @@
 export type GameMode = 'cancer' | 'oncologist';
 
+export type OncologistRoundPhase = 'diagnostic' | 'intervention';
+
 export type PlayMode = 'text' | 'labyrinth';
 
 export type MolecularDetailMode = 'logic' | 'precision';
@@ -247,6 +249,8 @@ export interface RoundDefinition {
 }
 
 export interface RoundOffer extends RoundDefinition {
+  oncologistPhase: OncologistRoundPhase;
+  oncologistDoorDiagnostics: DiagnosticToolId[];
   oncologistDoorTherapies: TherapyId[];
 }
 
@@ -283,6 +287,7 @@ export interface ScenarioDefinition {
 export interface TurnResolution {
   roundNumber: number;
   mode: GameMode;
+  actionKind?: 'cancer_strategy' | 'diagnostic' | 'intervention' | 'observation';
   eventTitle: string;
   actionTakenLabel: string;
   predictionLabel: string;

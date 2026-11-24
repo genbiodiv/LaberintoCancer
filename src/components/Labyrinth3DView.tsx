@@ -13,19 +13,22 @@ import {
   Gamepad2,
   Lock,
   Maximize2,
+  Microscope,
   Minimize2,
   Minus,
   Monitor,
   Plus,
   RotateCcw,
+  SkipForward,
   Smartphone,
+  Stethoscope,
   Volume2,
   VolumeX,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { getTherapyById } from '../engine/knowledgeBase';
+import { DIAGNOSTIC_TOOLS, getTherapyById } from '../engine/knowledgeBase';
 import { computeDestinationProgress } from '../engine/destinationMetrics';
 import {
   CancerSeverityMetrics,
@@ -63,7 +66,11 @@ import {
   MotionCalibration,
   normalizeDirectionKey,
 } from '../engine/motionControls';
-import { getActiveRoundOffer, shuffleRandom } from '../engine/progressionEngine';
+import {
+  getActiveRoundOffer,
+  getOncologistRoundPhase,
+  shuffleRandom,
+} from '../engine/progressionEngine';
 import { evaluatePredictionGate } from '../engine/simulator';
 import {
   DiagnosticToolId,
@@ -96,7 +103,9 @@ interface Labyrinth3DViewProps {
   onSwitchToText?: () => void;
   onResolveCancerTurn: (strategyId: string, predictionId: string) => void;
   onResolveOncologistTurn: (therapyId: TherapyId, predictionId: string) => void;
-  onRunDiagnostic: (toolId: DiagnosticToolId) => string | null;
+  onResolveOncologistDiagnostic: (toolId: DiagnosticToolId) => void;
+  onResolveOncologistObservation: () => void;
+  onRunDiagnostic?: (toolId: DiagnosticToolId) => string | null;
 }
 
 type CameraMode = 'first_person' | 'aerial';
@@ -163,6 +172,8 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   onSwitchToText,
   onResolveCancerTurn,
   onResolveOncologistTurn,
+  onResolveOncologistDiagnostic,
+  onResolveOncologistObservation,
   onRunDiagnostic,
 }) => {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -227,6 +238,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     [state, molecularDetail]
   );
   const currentRoundDef = useMemo(() => getActiveRoundOffer(state), [state]);
+  const oncologistPhase =
+    state.mode === 'oncologist'
+      ? currentRoundDef.oncologistPhase ?? getOncologistRoundPhase(state.currentRound)
+      : null;
 
   // Mutable refs for the WebGL loop so React state changes never recreate the renderer
   const layoutRef = useRef<LabyrinthLayout>(layout);
@@ -1163,7 +1178,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       } else if (hit.userData?.kind === 'diagnostic') {
         const toolId = hit.userData.toolId as DiagnosticToolId;
         const station = layoutRef.current.diagnosticStations.find((d) => d.toolId === toolId);
-        const msg = onRunDiagnosticRef.current(toolId);
+        const msg = onRunDiagnosticRef.current?.(toolId) ?? null;
         audioRef.current?.playDiagnostic();
         if (station) {
           threeRef.current?.spawnBurst(station.x, 1.5, station.z, 0x10b981);
@@ -1547,7 +1562,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   }, [resolutionLevel, isExpanded]);
 
   // Essential-only portal branch metadata for the confirmation drawer
-  // Freshly shuffles prediction options every time any door is opened (doorOpenNonce)
+  // Cancer mode keeps biological prediction gate; Oncologist mode advances directly through Diagnostic / Intervention choices!
   const activePortalDetails = useMemo(() => {
     void doorOpenNonce;
     if (!selectedPortal || !currentRoundDef) return null;
@@ -1555,67 +1570,103 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       const strat = currentRoundDef.cancerStrategies.find((s) => s.id === selectedPortal.actionId);
       if (!strat) return null;
       return {
+        requiresPrediction: true as const,
+        kind: 'cancer' as const,
         title: formatBiologyText(strat.label, molecularDetail),
         summary: formatBiologyText(strat.advantage, molecularDetail),
+        secondaryDetail: '',
         costTag: formatBiologyText(`Costo: ${strat.cost}`, molecularDetail),
+        ctaLabel: 'Abrir puerta',
         predictions: shuffleRandom(currentRoundDef.cancerPredictions).map((p) => ({
           ...p,
           label: formatBiologyText(p.label, molecularDetail),
         })),
       };
-    } else {
-      const therapy = getTherapyById(selectedPortal.actionId as TherapyId);
-      if (!therapy) return null;
+    }
+
+    if (selectedPortal.portalKind === 'diagnostic') {
+      const tool = DIAGNOSTIC_TOOLS.find((t) => t.id === selectedPortal.actionId);
+      if (!tool) return null;
       return {
-        title: getTherapyDisplayName(therapy, molecularDetail),
-        summary: formatBiologyText(therapy.mechanism, molecularDetail),
-        costTag: `Toxicidad ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`,
-        predictions: shuffleRandom(currentRoundDef.oncologistPredictions).map((p) => ({
-          ...p,
-          label: formatBiologyText(p.label, molecularDetail),
-        })),
+        requiresPrediction: false as const,
+        kind: 'diagnostic' as const,
+        title: formatBiologyText(tool.name, molecularDetail),
+        summary: formatBiologyText(tool.summary, molecularDetail),
+        secondaryDetail: formatBiologyText(tool.revealsDescription, molecularDetail),
+        costTag: 'Fase de diagnóstico · Sin toxicidad farmacológica',
+        ctaLabel: 'Realizar diagnóstico',
+        predictions: [],
       };
     }
+
+    const therapy = getTherapyById(selectedPortal.actionId as TherapyId);
+    if (!therapy) return null;
+    return {
+      requiresPrediction: false as const,
+      kind: 'intervention' as const,
+      title: getTherapyDisplayName(therapy, molecularDetail),
+      summary: formatBiologyText(therapy.mechanism, molecularDetail),
+      secondaryDetail: formatBiologyText(therapy.cloneEffectsSummary, molecularDetail),
+      costTag: `Efectos secundarios ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`,
+      ctaLabel: 'Aplicar intervención',
+      predictions: [],
+    };
   }, [selectedPortal, doorOpenNonce, currentRoundDef, state.mode, molecularDetail]);
 
   const activeDoorLock =
     selectedPortal && doorLockState?.portalId === selectedPortal.id ? doorLockState : null;
 
   const handleConfirmBranch = () => {
-    if (!selectedPortal || !selectedPredictionId) return;
-    const gate = evaluatePredictionGate(state, selectedPortal.actionId, selectedPredictionId);
-    if (!gate.allowed) {
-      audioRef.current?.playDoorLocked();
-      threeRef.current?.spawnBurst(selectedPortal.x, 1.8, selectedPortal.z, 0xe11d48);
-      setDoorLockState((prev) => ({
-        portalId: selectedPortal.id,
-        feedback: formatBiologyText(gate.feedback, molecularDetail),
-        rejectedIds: Array.from(
-          new Set([
-            ...(prev?.portalId === selectedPortal.id ? prev.rejectedIds : []),
-            selectedPredictionId,
-          ])
-        ),
-      }));
-      return;
-    }
-
-    audioRef.current?.ensureAmbientStarted();
-    audioRef.current?.playBranchCross(
-      state.clinical.tumorBurden,
-      state.mode === 'cancer' ? 12 : -12,
-      state.mode
-    );
-    threeRef.current?.spawnBurst(selectedPortal.x, 2.0, selectedPortal.z, selectedPortal.accentHex);
+    if (!selectedPortal || !activePortalDetails) return;
 
     if (state.mode === 'cancer') {
+      if (!selectedPredictionId) return;
+      const gate = evaluatePredictionGate(state, selectedPortal.actionId, selectedPredictionId);
+      if (!gate.allowed) {
+        audioRef.current?.playDoorLocked();
+        threeRef.current?.spawnBurst(selectedPortal.x, 1.8, selectedPortal.z, 0xe11d48);
+        setDoorLockState((prev) => ({
+          portalId: selectedPortal.id,
+          feedback: formatBiologyText(gate.feedback, molecularDetail),
+          rejectedIds: Array.from(
+            new Set([
+              ...(prev?.portalId === selectedPortal.id ? prev.rejectedIds : []),
+              selectedPredictionId,
+            ])
+          ),
+        }));
+        return;
+      }
+
+      audioRef.current?.ensureAmbientStarted();
+      audioRef.current?.playBranchCross(state.clinical.tumorBurden, 12, 'cancer');
+      threeRef.current?.spawnBurst(selectedPortal.x, 2.0, selectedPortal.z, selectedPortal.accentHex);
       onResolveCancerTurn(selectedPortal.actionId, selectedPredictionId);
+    } else if (selectedPortal.portalKind === 'diagnostic') {
+      audioRef.current?.ensureAmbientStarted();
+      audioRef.current?.playDiagnostic();
+      threeRef.current?.spawnBurst(selectedPortal.x, 2.0, selectedPortal.z, selectedPortal.accentHex);
+      onResolveOncologistDiagnostic(selectedPortal.actionId as DiagnosticToolId);
     } else {
-      onResolveOncologistTurn(selectedPortal.actionId as TherapyId, selectedPredictionId);
+      audioRef.current?.ensureAmbientStarted();
+      audioRef.current?.playBranchCross(state.clinical.tumorBurden, -12, 'oncologist');
+      threeRef.current?.spawnBurst(selectedPortal.x, 2.0, selectedPortal.z, selectedPortal.accentHex);
+      onResolveOncologistTurn(selectedPortal.actionId as TherapyId, '');
     }
+
     setDoorLockState(null);
     setSelectedPortal(null);
     setSelectedPredictionId('');
+  };
+
+  const handleObserveSkipRound = () => {
+    if (state.mode !== 'oncologist' || state.finished) return;
+    audioRef.current?.ensureAmbientStarted();
+    audioRef.current?.playDiagnostic();
+    setDoorLockState(null);
+    setSelectedPortal(null);
+    setSelectedPredictionId('');
+    onResolveOncologistObservation();
   };
 
   // Minimap coordinate transform
@@ -1642,6 +1693,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       data-testid="labyrinth-3d-stage"
       data-labyrinth-round={state.currentRound}
       data-labyrinth-mode={state.mode}
+      data-oncologist-phase={oncologistPhase ?? ''}
       data-unlimited-mode={state.unlimitedMode ? 'true' : 'false'}
       data-labyrinth-phase={theme.phase}
       data-destination-progress={destination.progress}
@@ -1721,6 +1773,16 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              {state.mode === 'oncologist' && !state.finished && (
+                <button
+                  type="button"
+                  onClick={handleObserveSkipRound}
+                  className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-700 hover:bg-emerald-600 text-white inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                  Observación · Saltar ronda
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setWebglRetryNonce((n) => n + 1)}
@@ -1773,13 +1835,20 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         <div className="w-[218px] sm:w-[248px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 space-y-1.5">
           <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
             <span className="inline-flex items-center gap-1.5">
-              <Compass
-                className={`w-3.5 h-3.5 shrink-0 ${
-                  state.mode === 'cancer' ? 'text-rose-400' : 'text-sky-400'
-                }`}
-                aria-hidden="true"
-              />
-              Ronda {state.currentRound}
+              {state.mode === 'oncologist' ? (
+                oncologistPhase === 'diagnostic' ? (
+                  <Microscope className="w-3.5 h-3.5 shrink-0 text-cyan-400" aria-hidden="true" />
+                ) : (
+                  <Stethoscope className="w-3.5 h-3.5 shrink-0 text-sky-400" aria-hidden="true" />
+                )
+              ) : (
+                <Compass className="w-3.5 h-3.5 shrink-0 text-rose-400" aria-hidden="true" />
+              )}
+              <span>
+                Ronda {state.currentRound}
+                {state.mode === 'oncologist' &&
+                  ` · ${oncologistPhase === 'diagnostic' ? 'Diagnóstico' : 'Intervención'}`}
+              </span>
             </span>
             <span className="text-slate-200 font-semibold tabular-nums">
               {state.mode === 'cancer'
@@ -1802,7 +1871,13 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             />
           </div>
           <div className="flex items-center justify-between gap-2 text-[11px]">
-            <span className="font-semibold text-white truncate">{theme.phaseLabel}</span>
+            <span className="font-semibold text-white truncate">
+              {state.mode === 'oncologist'
+                ? oncologistPhase === 'diagnostic'
+                  ? 'Puertas de diagnóstico'
+                  : 'Puertas de intervención'
+                : theme.phaseLabel}
+            </span>
             <span className="font-mono text-slate-400 tabular-nums shrink-0">
               {state.accumulatedProblems.length}{' '}
               {state.accumulatedProblems.length === 1 ? 'cambio' : 'cambios'}
@@ -1830,6 +1905,23 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Always-available Observation Skip Button in Oncologist Mode */}
+        {state.mode === 'oncologist' && !state.finished && (
+          <button
+            type="button"
+            data-testid="oncologist-observe-btn"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              handleObserveSkipRound();
+            }}
+            className="pointer-events-auto bg-slate-950/92 hover:bg-slate-900 border border-emerald-500/75 rounded-lg px-3 py-1.5 text-xs font-semibold text-emerald-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Eye className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+            <span>Observación · Saltar ronda</span>
+            <SkipForward className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {/* Hover Cue or Diagnostic / Sensor Toast (clears top HUD & minimap on mobile) */}
@@ -1945,62 +2037,69 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           <p className="mt-1.5 text-xs text-slate-300 leading-snug">
             {activePortalDetails.summary}
           </p>
-          <div className="mt-1 text-[11px] font-mono text-slate-400">
+          {activePortalDetails.secondaryDetail && (
+            <p className="mt-1.5 text-xs text-slate-400 leading-snug">
+              {activePortalDetails.secondaryDetail}
+            </p>
+          )}
+          <div className="mt-1.5 text-[11px] font-mono text-slate-400">
             {activePortalDetails.costTag}
           </div>
 
-          {/* Prediction gate required to unlock the door */}
-          <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-1.5">
-            <div className="text-[11px] font-semibold text-slate-300">
-              Predicción para abrir la puerta
-            </div>
-            <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-              {activePortalDetails.predictions.map((pred) => {
-                const isSelected = selectedPredictionId === pred.id;
-                const isRejected = Boolean(activeDoorLock?.rejectedIds.includes(pred.id));
-                return (
-                  <button
-                    key={pred.id}
-                    type="button"
-                    onClick={() => setSelectedPredictionId(pred.id)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors flex items-start justify-between gap-2 cursor-pointer ${
-                      isSelected
-                        ? isRejected
-                          ? 'bg-rose-950/80 border-rose-400 text-rose-100 font-medium'
-                          : 'bg-slate-800 border-sky-400 text-white font-medium'
-                        : isRejected
-                          ? 'bg-slate-900/70 border-rose-800/80 text-rose-300/85 hover:border-rose-600'
-                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
-                    }`}
-                  >
-                    <span>{pred.label}</span>
-                    {isRejected && (
-                      <Lock
-                        className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-400"
-                        aria-label="Predicción descartada"
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {activeDoorLock && (
-              <div
-                role="alert"
-                data-testid="door-locked-alert"
-                className="mt-2 p-2.5 rounded-lg bg-rose-950/90 border border-rose-500/75 text-xs text-rose-100 space-y-1"
-              >
-                <div className="font-semibold text-rose-200 inline-flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 shrink-0 text-rose-400" aria-hidden="true" />
-                  <span>Puerta bloqueada</span>
-                </div>
-                <p className="text-[11px] text-rose-100/90 leading-snug">
-                  {activeDoorLock.feedback}
-                </p>
+          {/* Prediction gate ONLY in Cancer Mode; Oncologist Mode resolves cleanly and directly */}
+          {activePortalDetails.requiresPrediction && (
+            <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-1.5">
+              <div className="text-[11px] font-semibold text-slate-300">
+                Predicción para abrir la puerta
               </div>
-            )}
-          </div>
+              <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                {activePortalDetails.predictions.map((pred) => {
+                  const isSelected = selectedPredictionId === pred.id;
+                  const isRejected = Boolean(activeDoorLock?.rejectedIds.includes(pred.id));
+                  return (
+                    <button
+                      key={pred.id}
+                      type="button"
+                      onClick={() => setSelectedPredictionId(pred.id)}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors flex items-start justify-between gap-2 cursor-pointer ${
+                        isSelected
+                          ? isRejected
+                            ? 'bg-rose-950/80 border-rose-400 text-rose-100 font-medium'
+                            : 'bg-slate-800 border-sky-400 text-white font-medium'
+                          : isRejected
+                            ? 'bg-slate-900/70 border-rose-800/80 text-rose-300/85 hover:border-rose-600'
+                            : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      <span>{pred.label}</span>
+                      {isRejected && (
+                        <Lock
+                          className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-400"
+                          aria-label="Predicción descartada"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeDoorLock && (
+                <div
+                  role="alert"
+                  data-testid="door-locked-alert"
+                  className="mt-2 p-2.5 rounded-lg bg-rose-950/90 border border-rose-500/75 text-xs text-rose-100 space-y-1"
+                >
+                  <div className="font-semibold text-rose-200 inline-flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 shrink-0 text-rose-400" aria-hidden="true" />
+                    <span>Puerta bloqueada</span>
+                  </div>
+                  <p className="text-[11px] text-rose-100/90 leading-snug">
+                    {activeDoorLock.feedback}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-3 flex items-center justify-end gap-2">
             <button
@@ -2015,17 +2114,20 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             </button>
             <button
               type="button"
-              disabled={!selectedPredictionId}
+              data-testid="portal-confirm-btn"
+              disabled={activePortalDetails.requiresPrediction && !selectedPredictionId}
               onClick={handleConfirmBranch}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
-                selectedPredictionId
+                !activePortalDetails.requiresPrediction || selectedPredictionId
                   ? state.mode === 'cancer'
                     ? 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer'
-                    : 'bg-sky-600 hover:bg-sky-500 text-white cursor-pointer'
+                    : activePortalDetails.kind === 'diagnostic'
+                      ? 'bg-cyan-600 hover:bg-cyan-500 text-white cursor-pointer'
+                      : 'bg-sky-600 hover:bg-sky-500 text-white cursor-pointer'
                   : 'bg-slate-800 text-slate-500 cursor-not-allowed'
               }`}
             >
-              <span>Abrir puerta</span>
+              <span>{activePortalDetails.ctaLabel}</span>
               <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>

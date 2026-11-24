@@ -69,23 +69,44 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
             </h2>
           </div>
 
-          <div
-            className={`text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 ${
-              resolution.predictionMatched ? 'text-emerald-700' : 'text-amber-700'
-            }`}
-          >
-            {resolution.predictionMatched ? (
-              <>
-                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                <span>Predicción correcta</span>
-              </>
-            ) : (
-              <>
-                <Info className="w-4 h-4" aria-hidden="true" />
-                <span>Resultado contrastado</span>
-              </>
-            )}
-          </div>
+          {resolution.mode === 'oncologist' ? (
+            <div
+              className={`text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 ${
+                resolution.actionKind === 'observation'
+                  ? 'text-emerald-700'
+                  : resolution.actionKind === 'diagnostic'
+                    ? 'text-cyan-700'
+                    : 'text-sky-700'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+              <span>
+                {resolution.actionKind === 'diagnostic'
+                  ? 'Diagnóstico completado'
+                  : resolution.actionKind === 'observation'
+                    ? 'Observación clínica'
+                    : 'Intervención aplicada'}
+              </span>
+            </div>
+          ) : (
+            <div
+              className={`text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 ${
+                resolution.predictionMatched ? 'text-emerald-700' : 'text-amber-700'
+              }`}
+            >
+              {resolution.predictionMatched ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                  <span>Predicción correcta</span>
+                </>
+              ) : (
+                <>
+                  <Info className="w-4 h-4" aria-hidden="true" />
+                  <span>Resultado contrastado</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Plain-Language Body */}
@@ -196,10 +217,16 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
             )}
           </section>
 
-          {/* Plain Explanation of What Happened */}
-          <section className="space-y-1">
+          {/* Plain Explanation of What Happened + Molecular/Cellular Ramifications */}
+          <section className="space-y-2">
             <h3 className="text-xs font-semibold text-slate-900">Qué pasó en esta ronda</h3>
             <p className="text-sm text-slate-700 leading-relaxed">{fmt(resolution.whatHappened)}</p>
+            {resolution.cellularProcessChanged && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 leading-relaxed">
+                <strong className="text-slate-900">Ramificación molecular y celular:</strong>{' '}
+                {fmt(resolution.cellularProcessChanged)}
+              </div>
+            )}
           </section>
 
           {/* Cell Population Breakdown (Visual Bars, Simple Labels) */}

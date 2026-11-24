@@ -250,8 +250,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                   Jugar como oncólogo
                 </h2>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Investiga el tumor, selecciona terapias basadas en evidencia y protege al paciente
-                  hasta alcanzar el{' '}
+                  Alterna rondas de diagnóstico e intervención —o salta en observación en cualquier
+                  momento— y explora sus ramificaciones celulares hasta el{' '}
                   <strong className="font-semibold text-slate-800">100% de liberación</strong>.
                 </p>
               </div>

@@ -2,8 +2,10 @@ import {
   AccumulatedProblem,
   CancerStrategyOption,
   ClinicalState,
+  DiagnosticToolId,
   GeneState,
   HallmarkId,
+  OncologistRoundPhase,
   OrganismDefenses,
   PredictionOption,
   RoundDefinition,
@@ -12,6 +14,16 @@ import {
   TherapyId,
   TumorClone,
 } from './types';
+
+/**
+ * Oncologist Mode alternates cleanly between:
+ * - Odd rounds (1, 3, 5, ...): Diagnostic round
+ * - Even rounds (2, 4, 6, ...): Intervention round
+ * At any round, the player can skip directly under Clinical Observation.
+ */
+export function getOncologistRoundPhase(roundNumber: number): OncologistRoundPhase {
+  return roundNumber % 2 === 1 ? 'diagnostic' : 'intervention';
+}
 
 export const UNIFIED_FEATURED_GENES: string[] = [
   'EGFR',
@@ -980,8 +992,52 @@ function buildOncologistPredictionsForRound(roundNumber: number): PredictionOpti
 }
 
 /**
- * Picks 3 randomized, clinically contrasting therapies for the 3D Labyrinth doors
- * based on the live accumulated tumor state (NO fixed 4-scenario logic!).
+ * Picks 3 randomized diagnostic studies for odd Oncologist rounds, prioritizing
+ * uncompleted studies early and including molecular response monitoring from Round 3+.
+ */
+export function selectRandomizedOncologistDiagnostics(
+  completedDiagnostics: DiagnosticToolId[],
+  roundNumber: number,
+  rng: () => number
+): DiagnosticToolId[] {
+  const basePool: DiagnosticToolId[] = [
+    'imaging',
+    'biopsy',
+    'molecular_profile',
+    'biomarkers',
+  ];
+  const fullPool: DiagnosticToolId[] =
+    roundNumber >= 3 ? [...basePool, 'response_monitoring'] : basePool;
+
+  const uncompleted = fullPool.filter((id) => !completedDiagnostics.includes(id));
+  const chosen: DiagnosticToolId[] = [];
+
+  for (const id of shuffleWithRng(uncompleted, rng)) {
+    if (chosen.length >= 3) break;
+    chosen.push(id);
+  }
+
+  // On round 3+, encourage response_monitoring if not yet chosen and slots remain
+  if (
+    roundNumber >= 3 &&
+    chosen.length < 3 &&
+    !chosen.includes('response_monitoring')
+  ) {
+    chosen.push('response_monitoring');
+  }
+
+  for (const id of shuffleWithRng(fullPool, rng)) {
+    if (chosen.length >= 3) break;
+    if (!chosen.includes(id)) chosen.push(id);
+  }
+
+  return shuffleWithRng(chosen.slice(0, 3), rng);
+}
+
+/**
+ * Picks 3 randomized, clinically contrasting active interventions for even Oncologist rounds
+ * based on the live accumulated tumor state. Excludes 'active_surveillance' because
+ * Observación (saltar ronda) is always available as a dedicated option on every round.
  */
 export function selectRandomizedOncologistDoors(
   clones: TumorClone[],
@@ -994,7 +1050,7 @@ export function selectRandomizedOncologistDoors(
 
   const effectivePool: TherapyId[] = [];
   const contrastingPool: TherapyId[] = [];
-  const conservativePool: TherapyId[] = ['active_surveillance', 'palliative_care'];
+  const supportivePool: TherapyId[] = ['palliative_care'];
 
   if (clinical.diseaseExtent === 'localizada') effectivePool.push('surgery');
   if (clinical.diseaseExtent !== 'diseminada') effectivePool.push('radiotherapy');
@@ -1035,20 +1091,19 @@ export function selectRandomizedOncologistDoors(
   };
 
   if (clinical.cumulativeToxicity >= 45 || clinical.qualityOfLife <= 48) {
-    pickUnique(conservativePool);
+    pickUnique(supportivePool);
     pickUnique(effectivePool);
-    pickUnique([...conservativePool, ...contrastingPool, ...effectivePool]);
+    pickUnique([...contrastingPool, ...effectivePool]);
   } else {
     pickUnique(effectivePool);
     pickUnique(contrastingPool.length > 0 ? contrastingPool : effectivePool);
-    // 3rd door randomly draws between another active mechanism or conservative/support
     const thirdPool =
-      rng() > 0.45 ? [...effectivePool, ...contrastingPool] : [...conservativePool, ...effectivePool];
+      rng() > 0.25 ? [...effectivePool, ...contrastingPool] : [...supportivePool, ...effectivePool];
     pickUnique(thirdPool);
   }
 
   // Fallback fill to always have exactly 3 distinct doors
-  for (const fallback of shuffleWithRng([...allActive, ...conservativePool], rng)) {
+  for (const fallback of shuffleWithRng([...allActive, ...supportivePool], rng)) {
     if (chosen.length >= 3) break;
     if (!chosen.includes(fallback)) chosen.push(fallback);
   }
@@ -1068,12 +1123,22 @@ export function generateRoundOffer(params: {
   clinical: ClinicalState;
   accumulatedProblems: AccumulatedProblem[];
   usedTherapies: TherapyId[];
+  completedDiagnostics?: DiagnosticToolId[];
   rng: () => number;
 }): RoundOffer {
-  const { roundNumber, clones, clinical, accumulatedProblems, usedTherapies, rng } = params;
+  const {
+    roundNumber,
+    clones,
+    clinical,
+    accumulatedProblems,
+    usedTherapies,
+    completedDiagnostics = [],
+    rng,
+  } = params;
   const acquiredIds = new Set(accumulatedProblems.map((p) => p.id));
 
   const barrier = selectBarrierForRound(roundNumber, accumulatedProblems, rng);
+  const oncologistPhase = getOncologistRoundPhase(roundNumber);
 
   // Choose eligible tier pool so problems progressively compound (R1: Tier 1; R2: Tier 1-2; R3+: All tiers, favoring unacquired higher tiers)
   const maxTier: 1 | 2 | 3 = roundNumber === 1 ? 1 : roundNumber === 2 ? 2 : 3;
@@ -1147,6 +1212,11 @@ export function generateRoundOffer(params: {
     };
   });
 
+  const oncologistDoorDiagnostics = selectRandomizedOncologistDiagnostics(
+    completedDiagnostics,
+    roundNumber,
+    rng
+  );
   const oncologistDoorTherapies = selectRandomizedOncologistDoors(
     clones,
     clinical,
@@ -1163,12 +1233,21 @@ export function generateRoundOffer(params: {
     rng
   );
 
+  const oncologistPrompt =
+    oncologistPhase === 'diagnostic'
+      ? roundNumber === 1
+        ? 'Ronda de diagnóstico: elige un estudio para caracterizar la lesión celular inicial, o salta esta ronda en observación.'
+        : `Ronda ${roundNumber} · Diagnóstico: selecciona un estudio para explorar el estado molecular y clonal actual, o continúa en observación.`
+      : `Ronda ${roundNumber} · Intervención: elige una terapia para actuar sobre los clones activos y observar sus ramificaciones celulares, o salta en observación.`;
+
   return {
     roundNumber,
     title: barrier.title,
     barrierType: barrier.barrierType,
     cancerPrompt: barrier.cancerPrompt,
-    oncologistPrompt: barrier.oncologistPrompt,
+    oncologistPrompt,
+    oncologistPhase,
+    oncologistDoorDiagnostics,
     virtualOncologistTherapy: undefined,
     cancerStrategies,
     oncologistDoorTherapies,
@@ -1186,7 +1265,9 @@ export function generateRoundOffer(params: {
  */
 export function getActiveRoundOffer(state: SimulationState): RoundOffer {
   const existing = state.roundOffers?.[state.currentRound];
-  if (existing) return existing;
+  if (existing && existing.oncologistPhase && existing.oncologistDoorDiagnostics) {
+    return existing;
+  }
   const rng = createSeededRng((state.randomSeed || 1337) + state.currentRound * 7919);
   return generateRoundOffer({
     roundNumber: state.currentRound,
@@ -1194,6 +1275,7 @@ export function getActiveRoundOffer(state: SimulationState): RoundOffer {
     clinical: state.clinical,
     accumulatedProblems: state.accumulatedProblems ?? [],
     usedTherapies: state.usedTherapies,
+    completedDiagnostics: state.completedDiagnostics ?? [],
     rng,
   });
 }

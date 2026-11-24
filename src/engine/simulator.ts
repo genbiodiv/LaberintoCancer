@@ -1159,6 +1159,7 @@ export function resolveCancerTurn(
   const resolution: TurnResolution = {
     roundNumber: state.currentRound,
     mode: 'cancer',
+    actionKind: 'cancer_strategy',
     eventTitle: round.title,
     actionTakenLabel: strategy.label,
     predictionLabel: prediction.label,
@@ -1257,13 +1258,15 @@ export function resolveCancerTurn(
 export function resolveOncologistTurn(
   state: SimulationState,
   therapyId: TherapyId,
-  predictionId: string
+  predictionId: string = ''
 ): { nextState: SimulationState; resolution: TurnResolution } {
   const round = getActiveRoundOffer(state);
   const therapy = getTherapyById(therapyId) ?? THERAPIES_CATALOG[0];
-  const prediction =
-    round.oncologistPredictions.find((p) => p.id === predictionId) ??
-    round.oncologistPredictions[0];
+  const hasPrediction = Boolean(predictionId && predictionId.trim().length > 0);
+  const prediction = hasPrediction
+    ? round.oncologistPredictions.find((p) => p.id === predictionId) ??
+      round.oncologistPredictions[0]
+    : null;
 
   const clonesBefore = state.clones.map((c) => ({ id: c.id, name: c.name, share: c.share }));
   const nextClones = cloneArray(state.clones);
@@ -1406,8 +1409,9 @@ export function resolveOncologistTurn(
   const resistantExpanded = normalizedClones.some(
     (c, idx) => c.origin !== 'founder' && c.share - clonesBefore[idx].share >= 8
   );
-  const gateCheck = evaluatePredictionGate(state, therapyId, prediction.id);
-  const predictionMatched = gateCheck.allowed;
+  const predictionMatched = prediction
+    ? evaluatePredictionGate(state, therapyId, prediction.id).allowed
+    : true;
 
   // Scoring — values diagnostic grounding, biological alignment, and patient quality of life!
   const informedChoice = state.completedDiagnostics.length >= 1;
@@ -1468,9 +1472,10 @@ export function resolveOncologistTurn(
   const resolution: TurnResolution = {
     roundNumber: state.currentRound,
     mode: 'oncologist',
+    actionKind: 'intervention',
     eventTitle: round.title,
     actionTakenLabel: therapy.name,
-    predictionLabel: prediction.label,
+    predictionLabel: prediction ? prediction.label : 'Intervención terapéutica directa',
     predictionMatched,
     whatHappened,
     genesInvolved:
@@ -1588,6 +1593,7 @@ export function resolveOncologistTurn(
       clinical: nextClinical,
       accumulatedProblems: nextAccumulatedProblems,
       usedTherapies: nextUsedTherapies,
+      completedDiagnostics: state.completedDiagnostics,
       rng: createSeededRng(state.randomSeed + nextRoundNumber * 7919),
     });
   }
@@ -1606,6 +1612,485 @@ export function resolveOncologistTurn(
     diagnosticBudget: nextBudget,
     history: [...state.history, resolution],
     score: nextScore,
+    currentRound: nextRoundNumber,
+    oncologistLiberation: nextLiberation,
+    finished: isLastRound,
+    outcomeCode,
+    outcomeTitle,
+    outcomeExplanation,
+  };
+
+  return { nextState, resolution };
+}
+
+/**
+ * Resolve an odd-round DIAGNOSTIC turn in ONCOLOGIST MODE.
+ * Reveals molecular/cellular details without budget walls, applies realistic
+ * tissue/clonal passage of time, and advances cleanly to the next Intervention round.
+ */
+export function resolveOncologistDiagnosticTurn(
+  state: SimulationState,
+  toolId: DiagnosticToolId
+): { nextState: SimulationState; resolution: TurnResolution } {
+  const round = getActiveRoundOffer(state);
+  const tool = DIAGNOSTIC_TOOLS.find((t) => t.id === toolId) ?? DIAGNOSTIC_TOOLS[0];
+
+  const clonesBefore = state.clones.map((c) => ({ id: c.id, name: c.name, share: c.share }));
+  const nextClones = cloneArray(state.clones);
+  const nextDefenses: OrganismDefenses = { ...state.defenses };
+  const nextClinical: ClinicalState = { ...state.clinical };
+
+  const revealed = new Set(state.revealedGenes);
+  let revealedExtent = state.revealedExtent;
+  let revealedClonalHeterogeneity = state.revealedClonalHeterogeneity;
+  let revealedBiomarkers = state.revealedBiomarkers;
+
+  const domStates = getDominantNetworkGeneStates(state.clones);
+  const dominantBefore = state.clones.reduce((a, b) => (b.share > a.share ? b : a), state.clones[0]);
+  const genesInvolved = new Set<string>();
+  let findingDetail = '';
+  let cellularProcessChanged = '';
+
+  switch (tool.id) {
+    case 'imaging': {
+      revealedExtent = true;
+      findingDetail = `Las imágenes caracterizaron una enfermedad ${state.clinical.diseaseExtent} con tasa tumoral actual de ${state.clinical.tumorBurden}% y actividad metabólica localizada en los focos principales.`;
+      cellularProcessChanged =
+        'Evaluación anatómica de masa tumoral, límites tisulares locales y extensión regional/diseminada.';
+      genesInvolved.add('VEGFA');
+      genesInvolved.add('MET');
+      break;
+    }
+    case 'biopsy': {
+      const biopsyGenes = ['TP53', 'RB1', 'BAX', 'CDK6', 'CDKN2A', 'ATM'];
+      biopsyGenes.forEach((g) => {
+        if (UNIFIED_FEATURED_GENES.includes(g)) revealed.add(g);
+        genesInvolved.add(g);
+      });
+      const alteredBiopsy = biopsyGenes.filter((g) => domStates[g] && domStates[g] !== 'functional');
+      findingDetail =
+        alteredBiopsy.length > 0
+          ? `La biopsia tisular detectó alteraciones en reguladores del ciclo celular y respuesta apoptótica (${alteredBiopsy.join(', ')}).`
+          : 'La biopsia tisular confirmó que los puntos de control del ciclo celular (RB1/TP53) y la vía apoptótica basal (BAX) siguen preservados.';
+      cellularProcessChanged =
+        'Caracterización histológica del índice mitótico, freno del ciclo celular (RB1/CDK6) y capacidad apoptótica (TP53/BAX).';
+      break;
+    }
+    case 'molecular_profile': {
+      const ngsGenes = ['EGFR', 'KRAS', 'PIK3CA', 'PTEN', 'MET', 'CDK6', 'RB1', 'TP53', 'BAX'];
+      ngsGenes.forEach((g) => {
+        if (UNIFIED_FEATURED_GENES.includes(g)) revealed.add(g);
+        genesInvolved.add(g);
+      });
+      revealedClonalHeterogeneity = true;
+      const activeDrivers = ngsGenes.filter((g) => domStates[g] && domStates[g] !== 'functional');
+      findingDetail = `El perfil molecular identificó ${activeDrivers.length > 0 ? `alteraciones activas en ${activeDrivers.join(', ')}` : 'señalización temprana sin bypass consolidado'} y mapeó ${state.clones.length} subpoblaciones clonales (dominante: ${dominantBefore.name}, ${dominantBefore.share}%).`;
+      cellularProcessChanged =
+        'Mapeo de impulsores mitogénicos (EGFR/KRAS/PIK3CA), supresores (PTEN/TP53/RB1) y arquitectura clonal heterogénea.';
+      break;
+    }
+    case 'biomarkers': {
+      const bioGenes = ['PDL1', 'VEGFA', 'BCL2'];
+      bioGenes.forEach((g) => {
+        if (UNIFIED_FEATURED_GENES.includes(g)) revealed.add(g);
+        genesInvolved.add(g);
+      });
+      revealedBiomarkers = true;
+      const pdl1Status = domStates.PDL1 === 'activated' ? 'expresión elevada de PD-L1' : 'expresión basal baja de PD-L1';
+      const vegfStatus = domStates.VEGFA === 'activated' ? 'señal angiogénica activa (VEGFA)' : 'baja inducción vascular';
+      findingDetail = `Los biomarcadores mostraron ${pdl1Status} y ${vegfStatus}, orientando la viabilidad de inmunoterapia frente a barreras del microambiente.`;
+      cellularProcessChanged =
+        'Cuantificación de evasión inmune (PD-L1), inducción angiogénica (VEGFA) y escudo antiapoptótico (BCL2).';
+      break;
+    }
+    case 'response_monitoring': {
+      UNIFIED_FEATURED_GENES.forEach((g) => revealed.add(g));
+      revealedClonalHeterogeneity = true;
+      const minority = state.clones
+        .filter((c) => c.id !== dominantBefore.id)
+        .sort((a, b) => b.share - a.share)[0];
+      findingDetail = `El seguimiento molecular actualizó la dinámica clonal en tiempo real: ${dominantBefore.name} (${dominantBefore.share}%)${minority ? ` junto a ${minority.name} (${minority.share}%)` : ''}, permitiendo anticipar escapes de resistencia.`;
+      cellularProcessChanged =
+        'Detección dinámica de expansión relativa de subclones resistentes y carga molecular residual.';
+      genesInvolved.add('EGFR');
+      genesInvolved.add('MET');
+      genesInvolved.add('PTEN');
+      break;
+    }
+  }
+
+  // Gentle biological passage of time during diagnostic evaluation (zero drug toxicity!)
+  for (const clone of nextClones) {
+    const drift = (clone.proliferationRate - clone.metabolicCost * 0.45) * 0.04;
+    clone.share = Math.max(2, clone.share + drift);
+  }
+  const normalizedClones = normalizeCloneShares(nextClones);
+
+  const burdenDelta = nextClinical.tumorBurden > 22 ? 2 : nextClinical.tumorBurden > 10 ? 1 : 0;
+  nextClinical.tumorBurden = clamp(nextClinical.tumorBurden + burdenDelta, 0, 100);
+  nextClinical.cumulativeToxicity = clamp(nextClinical.cumulativeToxicity - 4, 0, 100);
+  nextClinical.functionalStatus = clamp(
+    96 - nextClinical.tumorBurden * 0.44 - nextClinical.cumulativeToxicity * 0.44 + 3,
+    14,
+    98
+  );
+  nextClinical.qualityOfLife = clamp(
+    98 - nextClinical.tumorBurden * 0.36 - nextClinical.cumulativeToxicity * 0.52 + 4,
+    14,
+    98
+  );
+  nextClinical.diseaseControl = deriveDiseaseControl(nextClinical);
+  nextDefenses.immuneSurveillance = clamp(nextDefenses.immuneSurveillance + 2, 25, 96);
+
+  const prevHallmarks = state.hallmarkScores;
+  const nextHallmarks = computeHallmarkScores(normalizedClones, nextDefenses);
+  const nextEnabling = computeEnablingScores(normalizedClones, nextDefenses);
+
+  const hallmarksAffected: TurnResolution['hallmarksAffected'] = (
+    Object.keys(nextHallmarks) as HallmarkId[]
+  )
+    .filter((id) => Math.abs(nextHallmarks[id] - prevHallmarks[id]) >= 2)
+    .slice(0, 4)
+    .map((id) => ({
+      id,
+      direction: nextHallmarks[id] > prevHallmarks[id] ? 'up' : 'down',
+      note:
+        nextHallmarks[id] > prevHallmarks[id]
+          ? `+${nextHallmarks[id] - prevHallmarks[id]} pts`
+          : `${nextHallmarks[id] - prevHallmarks[id]} pts`,
+    }));
+
+  const completedDiagnostics = state.completedDiagnostics.includes(tool.id)
+    ? state.completedDiagnostics
+    : [...state.completedDiagnostics, tool.id];
+
+  const compBonus = clamp(state.score.molecularComprehension + 5, 0, 30);
+  const causalBonus = clamp(state.score.causalRelations + 3, 0, 30);
+  const decBonus = clamp(state.score.groundedDecisions + 3, 0, 25);
+  const nextScore: ScoreBreakdown = {
+    molecularComprehension: compBonus,
+    causalRelations: causalBonus,
+    groundedDecisions: decBonus,
+    reflection: state.score.reflection,
+    total: compBonus + causalBonus + decBonus + state.score.reflection,
+  };
+
+  const prevLiberation = state.oncologistLiberation ?? 16;
+  const liberationGain = nextClinical.cumulativeToxicity >= 75 ? 2 : 6;
+  const nextLiberation = clamp(prevLiberation + liberationGain, 4, 100);
+
+  if (state.unlimitedMode && nextLiberation >= 100) {
+    nextClinical.tumorBurden = 0;
+    nextClinical.diseaseControl = 'remision';
+  }
+
+  const isLastRound = state.unlimitedMode
+    ? nextLiberation >= 100
+    : state.currentRound >= state.maxRounds;
+
+  let outcomeCode: FinalOutcomeCode | undefined;
+  let outcomeTitle: string | undefined;
+  let outcomeExplanation: string | undefined;
+  if (isLastRound) {
+    if (state.unlimitedMode && nextLiberation >= 100) {
+      outcomeCode = 'remision_simulada';
+      outcomeTitle = '100% de liberación alcanzado · Tumor erradicado';
+      outcomeExplanation = `Recorriste ${state.currentRound} rondas alternando diagnóstico e intervención con precisión molecular hasta alcanzar el 100% de liberación tumoral.`;
+    } else {
+      outcomeCode = nextClinical.tumorBurden <= 32 ? 'control_sostenido' : 'enfermedad_activa';
+      outcomeTitle =
+        nextClinical.tumorBurden <= 32
+          ? 'Control sostenido de la enfermedad'
+          : 'Ciclo completado con enfermedad activa';
+      outcomeExplanation =
+        'El estudio diagnóstico completó la caracterización molecular al cierre de las rondas.';
+    }
+  }
+
+  const whatHappened = `${findingDetail} Durante el estudio no se aplicó carga tóxica adicional (efectos secundarios ${nextClinical.cumulativeToxicity}%). En la siguiente ronda podrás elegir una intervención dirigida con esta información.`;
+
+  const resolution: TurnResolution = {
+    roundNumber: state.currentRound,
+    mode: 'oncologist',
+    actionKind: 'diagnostic',
+    eventTitle: `Diagnóstico · Ronda ${state.currentRound}`,
+    actionTakenLabel: tool.name,
+    predictionLabel: 'Estudio diagnóstico',
+    predictionMatched: true,
+    whatHappened,
+    genesInvolved: Array.from(genesInvolved),
+    cellularProcessChanged,
+    hallmarksAffected,
+    evidenceCitations: [
+      { source: `Estudio diagnóstico (${tool.shortName})`, detail: tool.revealsDescription },
+      { source: 'Hanahan (Cell, 2026)', detail: HANAHAN_CITATION },
+    ],
+    clonesBefore,
+    clonesAfter: normalizedClones.map((c) => ({ id: c.id, name: c.name, share: c.share })),
+    clinicalDelta: {
+      tumorBurdenDelta: nextClinical.tumorBurden - state.clinical.tumorBurden,
+      toxicityDelta: nextClinical.cumulativeToxicity - state.clinical.cumulativeToxicity,
+      qolDelta: nextClinical.qualityOfLife - state.clinical.qualityOfLife,
+    },
+  };
+
+  const nextRoundNumber = isLastRound ? state.currentRound : state.currentRound + 1;
+  const nextRoundOffers = { ...state.roundOffers };
+  if (!isLastRound) {
+    nextRoundOffers[nextRoundNumber] = generateRoundOffer({
+      roundNumber: nextRoundNumber,
+      clones: normalizedClones,
+      clinical: nextClinical,
+      accumulatedProblems: state.accumulatedProblems,
+      usedTherapies: state.usedTherapies,
+      completedDiagnostics,
+      rng: createSeededRng(state.randomSeed + nextRoundNumber * 7919),
+    });
+  }
+
+  const nextState: SimulationState = {
+    ...state,
+    clones: normalizedClones,
+    defenses: nextDefenses,
+    clinical: nextClinical,
+    hallmarkScores: nextHallmarks,
+    enablingScores: nextEnabling,
+    completedDiagnostics,
+    revealedGenes: Array.from(revealed),
+    revealedExtent,
+    revealedClonalHeterogeneity,
+    revealedBiomarkers,
+    roundOffers: nextRoundOffers,
+    history: [...state.history, resolution],
+    score: nextScore,
+    currentRound: nextRoundNumber,
+    oncologistLiberation: nextLiberation,
+    finished: isLastRound,
+    outcomeCode,
+    outcomeTitle,
+    outcomeExplanation,
+  };
+
+  return { nextState, resolution };
+}
+
+/**
+ * Skip ANY Oncologist round (Diagnostic or Intervention) under Clinical Observation.
+ * Preserves healthy tissue, lowers toxicity, and reveals the natural cellular/clonal
+ * ramifications of waiting without pharmacological pressure.
+ */
+export function resolveOncologistObservationTurn(
+  state: SimulationState
+): { nextState: SimulationState; resolution: TurnResolution } {
+  const round = getActiveRoundOffer(state);
+  const skippedPhaseLabel = round.oncologistPhase === 'diagnostic' ? 'diagnóstico' : 'intervención';
+
+  const clonesBefore = state.clones.map((c) => ({ id: c.id, name: c.name, share: c.share }));
+  const nextClones = cloneArray(state.clones);
+  const nextDefenses: OrganismDefenses = { ...state.defenses };
+  const nextClinical: ClinicalState = { ...state.clinical };
+  const genesInvolved = new Set<string>();
+
+  // Natural clonal dynamics without pharmacological pressure
+  for (const clone of nextClones) {
+    const naturalFitness = (clone.proliferationRate - clone.metabolicCost * 0.38) * 0.09;
+    clone.share = Math.max(2, clone.share + naturalFitness);
+  }
+  let normalizedClones = normalizeCloneShares(nextClones);
+
+  // Burden drift depends on existing tumor load
+  const rawBurdenDelta =
+    nextClinical.tumorBurden >= 35
+      ? 5
+      : nextClinical.tumorBurden >= 20
+        ? 3
+        : nextClinical.tumorBurden >= 10
+          ? 1
+          : 0;
+  nextClinical.tumorBurden = clamp(nextClinical.tumorBurden + rawBurdenDelta, 0, 100);
+
+  // If high untreated burden persists, a subclone may accumulate a natural progression alteration
+  const nextAccumulatedProblems = [...state.accumulatedProblems];
+  let naturalMutationNote = '';
+  if (nextClinical.tumorBurden >= 30) {
+    const obsRng = createSeededRng(state.randomSeed + state.currentRound * 4219);
+    const adaptiveSpec = pickOncologistAdaptiveProblem(
+      nextAccumulatedProblems.map((p) => p.id),
+      'active_surveillance',
+      state.currentRound,
+      obsRng
+    );
+    if (adaptiveSpec) {
+      const targetSlot =
+        adaptiveSpec.targetCloneSlot === 'clone-founder'
+          ? 'clone-sub-a'
+          : adaptiveSpec.targetCloneSlot;
+      const problemEntry = {
+        id: adaptiveSpec.id,
+        roundNumber: state.currentRound,
+        geneSymbol: adaptiveSpec.geneSymbol,
+        geneState: adaptiveSpec.geneState,
+        logicLabel: adaptiveSpec.logicLabel,
+        precisionLabel: adaptiveSpec.precisionLabel,
+        shortDoorLogic: adaptiveSpec.shortDoorLogic,
+        shortDoorPrecision: adaptiveSpec.shortDoorPrecision,
+        summary: adaptiveSpec.summary,
+        hallmarkId: adaptiveSpec.hallmarkId,
+      };
+      normalizedClones = applyProblemToClones(
+        normalizedClones,
+        targetSlot,
+        problemEntry,
+        adaptiveSpec
+      );
+      nextAccumulatedProblems.push(problemEntry);
+      genesInvolved.add(adaptiveSpec.geneSymbol);
+      naturalMutationNote = ` Sin contención activa, el tumor acumuló una alteración adaptativa natural (${adaptiveSpec.precisionLabel}).`;
+    }
+  }
+
+  if (nextClinical.tumorBurden >= 72) nextClinical.diseaseExtent = 'diseminada';
+  else if (nextClinical.tumorBurden >= 55 && nextClinical.diseaseExtent === 'localizada') {
+    nextClinical.diseaseExtent = 'regional';
+  }
+
+  // Healthy tissue recovery & immune restoration under Observation
+  nextClinical.cumulativeToxicity = clamp(nextClinical.cumulativeToxicity - 10, 0, 100);
+  nextDefenses.immuneSurveillance = clamp(nextDefenses.immuneSurveillance + 6, 25, 96);
+  nextClinical.functionalStatus = clamp(
+    96 - nextClinical.tumorBurden * 0.44 - nextClinical.cumulativeToxicity * 0.44 + 5,
+    14,
+    98
+  );
+  nextClinical.qualityOfLife = clamp(
+    98 - nextClinical.tumorBurden * 0.36 - nextClinical.cumulativeToxicity * 0.52 + 7,
+    14,
+    98
+  );
+  nextClinical.diseaseControl = deriveDiseaseControl(nextClinical);
+
+  const prevHallmarks = state.hallmarkScores;
+  const nextHallmarks = computeHallmarkScores(normalizedClones, nextDefenses);
+  const nextEnabling = computeEnablingScores(normalizedClones, nextDefenses);
+
+  const hallmarksAffected: TurnResolution['hallmarksAffected'] = (
+    Object.keys(nextHallmarks) as HallmarkId[]
+  )
+    .filter((id) => Math.abs(nextHallmarks[id] - prevHallmarks[id]) >= 2)
+    .slice(0, 4)
+    .map((id) => ({
+      id,
+      direction: nextHallmarks[id] > prevHallmarks[id] ? 'up' : 'down',
+      note:
+        nextHallmarks[id] > prevHallmarks[id]
+          ? `+${nextHallmarks[id] - prevHallmarks[id]} pts`
+          : `${nextHallmarks[id] - prevHallmarks[id]} pts`,
+    }));
+
+  // Liberation progress under Observation
+  const prevLiberation = state.oncologistLiberation ?? 16;
+  let liberationDelta = 0;
+  if (nextClinical.tumorBurden <= 20) {
+    liberationDelta = 12;
+  } else if (state.clinical.cumulativeToxicity >= 30) {
+    liberationDelta = 8;
+  } else if (nextClinical.tumorBurden <= 30) {
+    liberationDelta = 4;
+  } else {
+    liberationDelta = -5;
+  }
+  const nextLiberation = clamp(prevLiberation + liberationDelta, 4, 100);
+
+  if (state.unlimitedMode && nextLiberation >= 100) {
+    nextClinical.tumorBurden = 0;
+    nextClinical.diseaseControl = 'remision';
+  }
+
+  const isLastRound = state.unlimitedMode
+    ? nextLiberation >= 100
+    : state.currentRound >= state.maxRounds;
+
+  let outcomeCode: FinalOutcomeCode | undefined;
+  let outcomeTitle: string | undefined;
+  let outcomeExplanation: string | undefined;
+  if (isLastRound) {
+    if (state.unlimitedMode && nextLiberation >= 100) {
+      outcomeCode = 'remision_simulada';
+      outcomeTitle = '100% de liberación alcanzado · Remisión consolidada';
+      outcomeExplanation = `Tras ${state.currentRound} rondas combinando diagnóstico, intervención y pausas de observación clínica, consolidaste el 100% de liberación preservando los tejidos sanos.`;
+    } else {
+      outcomeCode = nextClinical.tumorBurden <= 32 ? 'control_sostenido' : 'enfermedad_activa';
+      outcomeTitle =
+        nextClinical.tumorBurden <= 32
+          ? 'Control sostenido bajo observación'
+          : 'Ciclo completado con enfermedad activa';
+      outcomeExplanation =
+        'La observación preservó la función del paciente y evitó toxicidad acumulada, permitiendo evaluar la evolución natural de los clones.';
+    }
+  }
+
+  const dominantAfter = normalizedClones.reduce((a, b) => (b.share > a.share ? b : a));
+  const burdenChange = nextClinical.tumorBurden - state.clinical.tumorBurden;
+  const whatHappened = `Se saltó la ronda de ${skippedPhaseLabel} bajo observación clínica. Sin presión farmacológica, los tejidos sanos se recuperaron (efectos secundarios ${nextClinical.cumulativeToxicity}%, vigilancia inmune reforzada) y la tasa tumoral varió en ${burdenChange >= 0 ? '+' : ''}${burdenChange}%, manteniendo a ${dominantAfter.name} (${dominantAfter.share}%) como población dominante.${naturalMutationNote}`;
+
+  const resolution: TurnResolution = {
+    roundNumber: state.currentRound,
+    mode: 'oncologist',
+    actionKind: 'observation',
+    eventTitle: `Observación clínica · Ronda ${state.currentRound}`,
+    actionTakenLabel: 'Observación clínica (ronda omitida)',
+    predictionLabel: 'Pausa en observación',
+    predictionMatched: true,
+    whatHappened,
+    genesInvolved:
+      Array.from(genesInvolved).length > 0
+        ? Array.from(genesInvolved)
+        : ['EGFR', 'TP53', 'PDL1'],
+    cellularProcessChanged:
+      'Recuperación de tejidos sanos y linfocitos T sin presión farmacológica frente a la proliferación basal natural de los clones.',
+    hallmarksAffected,
+    evidenceCitations: [
+      {
+        source: 'Observación y desescalada clínica',
+        detail:
+          'Pausar intervenciones permite recuperar médula ósea y vigilancia inmune, evitando seleccionar clones resistentes innecesariamente cuando la carga está controlada.',
+      },
+      { source: 'Hanahan (Cell, 2026)', detail: HANAHAN_CITATION },
+    ],
+    clonesBefore,
+    clonesAfter: normalizedClones.map((c) => ({ id: c.id, name: c.name, share: c.share })),
+    clinicalDelta: {
+      tumorBurdenDelta: burdenChange,
+      toxicityDelta: nextClinical.cumulativeToxicity - state.clinical.cumulativeToxicity,
+      qolDelta: nextClinical.qualityOfLife - state.clinical.qualityOfLife,
+    },
+  };
+
+  const nextRoundNumber = isLastRound ? state.currentRound : state.currentRound + 1;
+  const nextRoundOffers = { ...state.roundOffers };
+  if (!isLastRound) {
+    nextRoundOffers[nextRoundNumber] = generateRoundOffer({
+      roundNumber: nextRoundNumber,
+      clones: normalizedClones,
+      clinical: nextClinical,
+      accumulatedProblems: nextAccumulatedProblems,
+      usedTherapies: state.usedTherapies,
+      completedDiagnostics: state.completedDiagnostics,
+      rng: createSeededRng(state.randomSeed + nextRoundNumber * 7919),
+    });
+  }
+
+  const nextState: SimulationState = {
+    ...state,
+    clones: normalizedClones,
+    defenses: nextDefenses,
+    clinical: nextClinical,
+    hallmarkScores: nextHallmarks,
+    enablingScores: nextEnabling,
+    activeTherapy: 'active_surveillance',
+    accumulatedProblems: nextAccumulatedProblems,
+    roundOffers: nextRoundOffers,
+    history: [...state.history, resolution],
     currentRound: nextRoundNumber,
     oncologistLiberation: nextLiberation,
     finished: isLastRound,

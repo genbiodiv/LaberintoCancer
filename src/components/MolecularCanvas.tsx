@@ -171,7 +171,8 @@ interface MolecularCanvasProps {
   onToggleLabyrinthExpand: () => void;
   onResolveCancerTurn: (strategyId: string, predictionId: string) => void;
   onResolveOncologistTurn: (therapyId: TherapyId, predictionId: string) => void;
-  onRunDiagnostic: (toolId: DiagnosticToolId) => string | null;
+  onResolveOncologistDiagnostic: (toolId: DiagnosticToolId) => void;
+  onResolveOncologistObservation: () => void;
   mode: GameMode;
   clones: TumorClone[];
   revealedGenes: string[];
@@ -191,7 +192,8 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
   onToggleLabyrinthExpand,
   onResolveCancerTurn,
   onResolveOncologistTurn,
-  onRunDiagnostic,
+  onResolveOncologistDiagnostic,
+  onResolveOncologistObservation,
   mode,
   clones,
   revealedGenes,
@@ -387,7 +389,8 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
             onToggleExpand={onToggleLabyrinthExpand}
             onResolveCancerTurn={onResolveCancerTurn}
             onResolveOncologistTurn={onResolveOncologistTurn}
-            onRunDiagnostic={onRunDiagnostic}
+            onResolveOncologistDiagnostic={onResolveOncologistDiagnostic}
+            onResolveOncologistObservation={onResolveOncologistObservation}
           />
         ) : effectiveStageTab === 'network' ? (
           <>

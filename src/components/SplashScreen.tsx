@@ -133,8 +133,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onContinue }) => {
                 <strong className="text-white font-medium">Cáncer</strong> para vencer las
                 defensas naturales del organismo hasta llegar al{' '}
                 <span className="font-mono text-rose-300 tabular-nums">100%</span>, o como{' '}
-                <strong className="text-white font-medium">Oncólogo</strong> para diagnosticar y
-                tratar hasta el{' '}
+                <strong className="text-white font-medium">Oncólogo</strong> alternando rondas de{' '}
+                <strong className="text-white font-medium">diagnóstico</strong> e{' '}
+                <strong className="text-white font-medium">intervención</strong> (o{' '}
+                <strong className="text-white font-medium">observación</strong>) hasta el{' '}
                 <span className="font-mono text-sky-300 tabular-nums">100%</span> de liberación.
               </p>
             </article>
@@ -146,10 +148,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onContinue }) => {
                 <h3 className="text-sm font-semibold text-white">02. Abre puertas y observa</h3>
               </div>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                En cada cámara verás tres puertas iluminadas. Acércate o tócalas y elige la{' '}
-                <strong className="text-white font-medium">predicción biológica correcta</strong>{' '}
-                para desbloquear el paso. Conforme sube la gravedad, las venas vasculares, los
-                nódulos y el latido del entorno se intensifican.
+                En cada cámara verás tres puertas iluminadas. Acércate o tócalas para avanzar y
+                explorar sus{' '}
+                <strong className="text-white font-medium">
+                  ramificaciones moleculares y celulares
+                </strong>
+                . En modo Oncólogo puedes elegir <strong className="text-white font-medium">Observación</strong>{' '}
+                para saltar cualquier ronda.
               </p>
             </article>
 

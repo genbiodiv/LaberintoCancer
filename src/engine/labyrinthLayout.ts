@@ -1,12 +1,12 @@
-import { THERAPIES_CATALOG } from './knowledgeBase';
+import { DIAGNOSTIC_TOOLS, THERAPIES_CATALOG } from './knowledgeBase';
 import {
   formatBiologyText,
   getCancerDoorShortLabel,
   getTherapyDisplayName,
   getTherapyDisplayShort,
 } from './molecularAbstraction';
-import { getActiveRoundOffer } from './progressionEngine';
-import { MolecularDetailMode, SimulationState, TherapyId } from './types';
+import { getActiveRoundOffer, getOncologistRoundPhase } from './progressionEngine';
+import { DiagnosticToolId, MolecularDetailMode, SimulationState, TherapyId } from './types';
 
 export interface WalkableBox {
   id: string;
@@ -18,7 +18,8 @@ export interface WalkableBox {
 
 export interface LabyrinthPortal {
   id: string;
-  actionId: string; // strategyId in cancer mode, therapyId in oncologist mode
+  actionId: string; // strategyId in cancer mode, diagnosticToolId or therapyId in oncologist mode
+  portalKind?: 'cancer' | 'diagnostic' | 'intervention';
   label: string;
   fullTitle: string;
   sublabel: string;
@@ -203,8 +204,41 @@ export function buildLabyrinthLayout(
     }
 
     // Build branch options for this round
+    const oncoPhase = roundDef.oncologistPhase ?? getOncologistRoundPhase(r);
+    const diagDoorMeta: Record<
+      DiagnosticToolId,
+      { labelLogic: string; labelPrecision: string; sublabel: string }
+    > = {
+      imaging: {
+        labelLogic: 'Imágenes',
+        labelPrecision: 'Imágenes',
+        sublabel: 'Extensión y carga',
+      },
+      biopsy: {
+        labelLogic: 'Biopsia',
+        labelPrecision: 'Biopsia',
+        sublabel: 'Ciclo y apoptosis',
+      },
+      molecular_profile: {
+        labelLogic: 'Perfil funcional',
+        labelPrecision: 'Perfil NGS',
+        sublabel: 'Impulsores y clones',
+      },
+      biomarkers: {
+        labelLogic: 'Biomarcadores',
+        labelPrecision: 'Biomarcadores',
+        sublabel: 'Inmune y vascular',
+      },
+      response_monitoring: {
+        labelLogic: 'Seguimiento',
+        labelPrecision: 'Seguimiento',
+        sublabel: 'Clones activos',
+      },
+    };
+
     const branches: {
       actionId: string;
+      portalKind: 'cancer' | 'diagnostic' | 'intervention';
       rawLabel: string;
       label: string;
       fullTitle: string;
@@ -234,6 +268,7 @@ export function buildLabyrinthLayout(
               : s.originNote;
             return {
               actionId: s.id,
+              portalKind: 'cancer',
               rawLabel: s.label,
               label: shortLabel,
               fullTitle,
@@ -242,23 +277,46 @@ export function buildLabyrinthLayout(
               accentCss: palette.css,
             };
           })
-        : roundDef.oncologistDoorTherapies.map((tid, idx) => {
-            const rule = THERAPIES_CATALOG.find((t) => t.id === tid)!;
-            const palette = [
-              { hex: 0x0284c7, css: '#0284c7' },
-              { hex: 0x059669, css: '#059669' },
-              { hex: 0xd97706, css: '#d97706' },
-            ][idx % 3];
-            return {
-              actionId: rule.id,
-              rawLabel: rule.shortName,
-              label: getTherapyDisplayShort(rule, detail),
-              fullTitle: getTherapyDisplayName(rule, detail),
-              sublabel: `Tox ${rule.toxicityDelta >= 0 ? '+' : ''}${rule.toxicityDelta}`,
-              accentHex: palette.hex,
-              accentCss: palette.css,
-            };
-          });
+        : oncoPhase === 'diagnostic'
+          ? (roundDef.oncologistDoorDiagnostics ?? ['imaging', 'biopsy', 'molecular_profile']).map(
+              (toolId, idx) => {
+                const tool = DIAGNOSTIC_TOOLS.find((t) => t.id === toolId) ?? DIAGNOSTIC_TOOLS[0];
+                const meta = diagDoorMeta[tool.id];
+                const palette = [
+                  { hex: 0x06b6d4, css: '#06b6d4' },
+                  { hex: 0x0284c7, css: '#0284c7' },
+                  { hex: 0x6366f1, css: '#6366f1' },
+                ][idx % 3];
+                return {
+                  actionId: tool.id,
+                  portalKind: 'diagnostic',
+                  rawLabel: tool.name,
+                  label: detail === 'precision' ? meta.labelPrecision : meta.labelLogic,
+                  fullTitle: formatBiologyText(tool.name, detail),
+                  sublabel: meta.sublabel,
+                  accentHex: palette.hex,
+                  accentCss: palette.css,
+                };
+              }
+            )
+          : roundDef.oncologistDoorTherapies.map((tid, idx) => {
+              const rule = THERAPIES_CATALOG.find((t) => t.id === tid)!;
+              const palette = [
+                { hex: 0x0284c7, css: '#0284c7' },
+                { hex: 0x059669, css: '#059669' },
+                { hex: 0xd97706, css: '#d97706' },
+              ][idx % 3];
+              return {
+                actionId: rule.id,
+                portalKind: 'intervention',
+                rawLabel: rule.shortName,
+                label: getTherapyDisplayShort(rule, detail),
+                fullTitle: getTherapyDisplayName(rule, detail),
+                sublabel: `Tox ${rule.toxicityDelta >= 0 ? '+' : ''}${rule.toxicityDelta}`,
+                accentHex: palette.hex,
+                accentCss: palette.css,
+              };
+            });
 
     // Place forking portals along the northern (-Z) edge of the chamber
     const count = branches.length;
@@ -267,17 +325,20 @@ export function buildLabyrinthLayout(
 
     let chosenBranchOffsetX = 0;
 
+    const wasObservedRound = historyEntry?.actionKind === 'observation';
+
     branches.forEach((branch, idx) => {
       const bx = currentX + xOffsets[idx];
       const bz = currentZ - CHAMBER_DEPTH / 2 + 0.6;
       const isChosen = Boolean(
         historyEntry &&
+          !wasObservedRound &&
           (historyEntry.actionTakenLabel === branch.rawLabel ||
             historyEntry.actionTakenLabel.toLowerCase().includes(branch.rawLabel.toLowerCase()))
       );
       const status: LabyrinthPortal['status'] = isCurrent
         ? 'active'
-        : isChosen || (!historyEntry && idx === 0)
+        : isChosen || (wasObservedRound && idx === Math.floor(count / 2)) || (!historyEntry && idx === 0)
           ? 'chosen'
           : 'sealed';
 
@@ -288,6 +349,7 @@ export function buildLabyrinthLayout(
       portals.push({
         id: `portal-r${r}-${branch.actionId}`,
         actionId: branch.actionId,
+        portalKind: branch.portalKind,
         label: branch.label,
         fullTitle: branch.fullTitle,
         sublabel: branch.sublabel,
@@ -320,36 +382,6 @@ export function buildLabyrinthLayout(
         });
       }
     });
-
-    // Add diagnostic wall consoles in the current chamber for Oncologist Mode
-    if (isCurrent && state.mode === 'oncologist') {
-      const diagDefs: {
-        toolId: LabyrinthDiagnosticStation['toolId'];
-        label: string;
-        side: -1 | 1;
-        zOff: number;
-      }[] = [
-        { toolId: 'imaging', label: 'Imágenes', side: -1, zOff: 2.2 },
-        { toolId: 'biopsy', label: 'Biopsia', side: -1, zOff: -1.8 },
-        {
-          toolId: 'molecular_profile',
-          label: detail === 'precision' ? 'Perfil NGS' : 'Perfil funcional',
-          side: 1,
-          zOff: 2.2,
-        },
-        { toolId: 'biomarkers', label: 'Biomarcadores', side: 1, zOff: -1.8 },
-      ];
-      for (const d of diagDefs) {
-        diagnosticStations.push({
-          id: `diag-${r}-${d.toolId}`,
-          toolId: d.toolId,
-          label: d.label,
-          x: currentX + d.side * (CHAMBER_WIDTH / 2 - 1.5),
-          z: currentZ + d.zOff,
-          completed: state.completedDiagnostics.includes(d.toolId),
-        });
-      }
-    }
 
     // If this round is already completed and there's a next chamber, build a connecting corridor
     if (r < endRound) {
