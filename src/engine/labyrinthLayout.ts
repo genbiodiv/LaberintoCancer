@@ -2,6 +2,7 @@ import { DIAGNOSTIC_TOOLS, THERAPIES_CATALOG } from './knowledgeBase';
 import {
   formatBiologyText,
   getCancerDoorShortLabel,
+  getDiagnosticDisplayInfo,
   getTherapyDisplayName,
   getTherapyDisplayShort,
 } from './molecularAbstraction';
@@ -207,31 +208,47 @@ export function buildLabyrinthLayout(
     const oncoPhase = roundDef.oncologistPhase ?? getOncologistRoundPhase(r);
     const diagDoorMeta: Record<
       DiagnosticToolId,
-      { labelLogic: string; labelPrecision: string; sublabel: string }
+      {
+        labelSimple: string;
+        labelLogic: string;
+        labelPrecision: string;
+        sublabelSimple: string;
+        sublabel: string;
+      }
     > = {
       imaging: {
+        labelSimple: 'Imágenes',
         labelLogic: 'Imágenes',
         labelPrecision: 'Imágenes',
+        sublabelSimple: 'Tamaño y lugar',
         sublabel: 'Extensión y carga',
       },
       biopsy: {
+        labelSimple: 'Biopsia',
         labelLogic: 'Biopsia',
         labelPrecision: 'Biopsia',
+        sublabelSimple: 'Frenos y ritmo',
         sublabel: 'Ciclo y apoptosis',
       },
       molecular_profile: {
+        labelSimple: 'Mapa interno',
         labelLogic: 'Perfil funcional',
         labelPrecision: 'Perfil NGS',
+        sublabelSimple: 'Piezas y grupos',
         sublabel: 'Impulsores y clones',
       },
       biomarkers: {
+        labelSimple: 'Señales',
         labelLogic: 'Biomarcadores',
         labelPrecision: 'Biomarcadores',
+        sublabelSimple: 'Disfraz y vasos',
         sublabel: 'Inmune y vascular',
       },
       response_monitoring: {
+        labelSimple: 'Seguimiento',
         labelLogic: 'Seguimiento',
         labelPrecision: 'Seguimiento',
+        sublabelSimple: 'Grupos activos',
         sublabel: 'Clones activos',
       },
     };
@@ -257,14 +274,18 @@ export function buildLabyrinthLayout(
             const shortLabel =
               detail === 'precision'
                 ? s.shortDoorPrecision ?? getCancerDoorShortLabel(s.id, s.label, detail)
-                : s.shortDoorLogic ?? getCancerDoorShortLabel(s.id, s.label, detail);
+                : detail === 'simple'
+                  ? getCancerDoorShortLabel(s.id, s.label, 'simple')
+                  : s.shortDoorLogic ?? getCancerDoorShortLabel(s.id, s.label, detail);
             const fullTitle = formatBiologyText(s.label, detail);
             const cloneTag = clone
               ? detail === 'precision'
                 ? s.problemMutation
                   ? `${s.problemMutation.precisionLabel} · ${clone.share}%`
                   : `${clone.shortTag} · ${clone.share}%`
-                : `Clon ${idx + 1} · ${clone.share}%`
+                : detail === 'simple'
+                  ? `Grupo ${idx + 1} · ${clone.share}%`
+                  : `Clon ${idx + 1} · ${clone.share}%`
               : s.originNote;
             return {
               actionId: s.id,
@@ -282,6 +303,7 @@ export function buildLabyrinthLayout(
               (toolId, idx) => {
                 const tool = DIAGNOSTIC_TOOLS.find((t) => t.id === toolId) ?? DIAGNOSTIC_TOOLS[0];
                 const meta = diagDoorMeta[tool.id];
+                const diagDisplay = getDiagnosticDisplayInfo(tool, detail);
                 const palette = [
                   { hex: 0x06b6d4, css: '#06b6d4' },
                   { hex: 0x0284c7, css: '#0284c7' },
@@ -291,9 +313,14 @@ export function buildLabyrinthLayout(
                   actionId: tool.id,
                   portalKind: 'diagnostic',
                   rawLabel: tool.name,
-                  label: detail === 'precision' ? meta.labelPrecision : meta.labelLogic,
-                  fullTitle: formatBiologyText(tool.name, detail),
-                  sublabel: meta.sublabel,
+                  label:
+                    detail === 'precision'
+                      ? meta.labelPrecision
+                      : detail === 'simple'
+                        ? meta.labelSimple
+                        : meta.labelLogic,
+                  fullTitle: diagDisplay.name,
+                  sublabel: detail === 'simple' ? meta.sublabelSimple : meta.sublabel,
                   accentHex: palette.hex,
                   accentCss: palette.css,
                 };
@@ -312,7 +339,12 @@ export function buildLabyrinthLayout(
                 rawLabel: rule.shortName,
                 label: getTherapyDisplayShort(rule, detail),
                 fullTitle: getTherapyDisplayName(rule, detail),
-                sublabel: `Tox ${rule.toxicityDelta >= 0 ? '+' : ''}${rule.toxicityDelta}`,
+                sublabel:
+                  detail === 'simple'
+                    ? rule.toxicityDelta <= 0
+                      ? 'Cuerpo descansa'
+                      : `Desgaste +${rule.toxicityDelta}`
+                    : `Tox ${rule.toxicityDelta >= 0 ? '+' : ''}${rule.toxicityDelta}`,
                 accentHex: palette.hex,
                 accentCss: palette.css,
               };

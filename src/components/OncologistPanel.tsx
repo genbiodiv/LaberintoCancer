@@ -3,14 +3,18 @@ import {
   ArrowRight,
   CheckCircle2,
   Eye,
+  Lightbulb,
   Microscope,
   SkipForward,
   Stethoscope,
 } from 'lucide-react';
 import { DIAGNOSTIC_TOOLS, getTherapyById } from '../engine/knowledgeBase';
 import {
+  describeCurrentSituationSimple,
   formatBiologyText,
-  getTherapyDisplayName,
+  getDiagnosticDisplayInfo,
+  getOncologistStageInfo,
+  getTherapyDisplayInfo,
 } from '../engine/molecularAbstraction';
 import {
   getActiveRoundOffer,
@@ -49,13 +53,15 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
   }, [state.currentRound, state.runId]);
 
   const fmt = (text: string) => formatBiologyText(text, molecularDetail);
+  const isSimple = molecularDetail === 'simple';
+  const stageInfo = getOncologistStageInfo(state.oncologistStartStage ?? 'early', molecularDetail);
 
   if (state.finished) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-center items-center text-center h-full">
-        <p className="text-sm font-semibold text-slate-900">Recorrido finalizado</p>
-        <p className="text-xs text-slate-500 mt-1">
-          Consulta el informe final para revisar las ramificaciones celulares de tus decisiones.
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col justify-center items-center text-center h-full">
+        <p className="text-sm font-semibold text-slate-900 dark:text-white">Recorrido finalizado</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          Consulta el informe final para revisar cómo respondieron las células a tus decisiones.
         </p>
       </div>
     );
@@ -88,14 +94,17 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
     <div
       data-testid="oncologist-panel"
       data-oncologist-phase={phase}
-      className="flex flex-col h-full bg-white border border-slate-200 rounded-xl overflow-hidden"
+      data-oncologist-stage={state.oncologistStartStage ?? 'early'}
+      className="flex flex-col h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"
     >
       {/* Clean Alternating Phase Header */}
-      <div className="px-4 py-3.5 border-b border-slate-200 bg-slate-50/70 space-y-1.5">
+      <div className="px-4 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 space-y-2">
         <div className="flex items-center justify-between gap-2 text-xs font-mono">
           <span
             className={`font-semibold inline-flex items-center gap-1.5 ${
-              isDiagnosticPhase ? 'text-cyan-700' : 'text-sky-700'
+              isDiagnosticPhase
+                ? 'text-cyan-700 dark:text-cyan-400'
+                : 'text-sky-700 dark:text-sky-400'
             }`}
           >
             {isDiagnosticPhase ? (
@@ -107,37 +116,62 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
               Ronda {state.currentRound} · {isDiagnosticPhase ? 'Diagnóstico' : 'Intervención'}
             </span>
           </span>
-          <span className="text-slate-500 tabular-nums">
-            Siguiente: {isDiagnosticPhase ? 'Intervención' : 'Diagnóstico'}
+          <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+            {stageInfo.label}
           </span>
         </div>
 
-        <h2 className="text-sm font-bold text-slate-900 leading-snug">
+        <h2 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
           {isDiagnosticPhase
-            ? 'Elige un estudio diagnóstico'
-            : 'Elige una intervención clínica'}
+            ? isSimple
+              ? 'Elige un examen para conocer el tumor'
+              : 'Elige un estudio diagnóstico'
+            : isSimple
+              ? 'Elige cómo tratar al paciente'
+              : 'Elige una intervención clínica'}
         </h2>
-        <p className="text-xs text-slate-600 leading-relaxed">
+        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
           {fmt(round.oncologistPrompt)}
         </p>
 
+        {isSimple && (
+          <div
+            data-testid="simple-situation-callout"
+            className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/40 px-2.5 py-2 text-[11px] text-emerald-950 dark:text-emerald-200 leading-snug flex items-start gap-2"
+          >
+            <Lightbulb
+              className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5"
+              aria-hidden="true"
+            />
+            <span>{describeCurrentSituationSimple(state)}</span>
+          </div>
+        )}
+
         {/* Compact Clinical Snapshot Line */}
-        <div className="pt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-slate-500 border-t border-slate-200/70">
+        <div className="pt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-slate-500 dark:text-slate-400 border-t border-slate-200/70 dark:border-slate-800">
           <span>
-            Extensión:{' '}
-            <strong className="text-slate-800">
-              {state.revealedExtent ? state.clinical.diseaseExtent : 'Sin definir'}
+            {isSimple ? 'Ubicación:' : 'Extensión:'}{' '}
+            <strong className="text-slate-800 dark:text-slate-100">
+              {state.revealedExtent
+                ? isSimple
+                  ? state.clinical.diseaseExtent === 'localizada'
+                    ? 'en un solo lugar'
+                    : state.clinical.diseaseExtent === 'regional'
+                      ? 'zona cercana'
+                      : 'extendido'
+                  : state.clinical.diseaseExtent
+                : 'Sin definir'}
             </strong>
           </span>
           <span>
-            Estudios:{' '}
-            <strong className="text-slate-800 tabular-nums">
+            {isSimple ? 'Exámenes:' : 'Estudios:'}{' '}
+            <strong className="text-slate-800 dark:text-slate-100 tabular-nums">
               {state.completedDiagnostics.length}
             </strong>
           </span>
           <span>
-            Efectos sec.:{' '}
-            <strong className="text-slate-800 tabular-nums">
+            {isSimple ? 'Desgaste:' : 'Efectos sec.:'}{' '}
+            <strong className="text-slate-800 dark:text-slate-100 tabular-nums">
               {state.clinical.cumulativeToxicity}%
             </strong>
           </span>
@@ -151,6 +185,7 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
             {offeredDiagnostics.map((tool) => {
               const isSelected = selectedDiagnosticId === tool.id;
               const doneBefore = state.completedDiagnostics.includes(tool.id);
+              const diag = getDiagnosticDisplayInfo(tool, molecularDetail);
               return (
                 <button
                   key={tool.id}
@@ -159,27 +194,29 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
                   onClick={() => setSelectedDiagnosticId(tool.id)}
                   className={`w-full text-left p-3.5 rounded-lg border transition-all duration-150 cursor-pointer space-y-1.5 ${
                     isSelected
-                      ? 'border-cyan-600 bg-cyan-50/50 ring-1 ring-cyan-600'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
+                      ? 'border-cyan-600 dark:border-cyan-400 bg-cyan-50/50 dark:bg-cyan-950/50 ring-1 ring-cyan-600 dark:ring-cyan-400'
+                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-semibold text-slate-900 leading-snug">
-                      {fmt(tool.name)}
+                    <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
+                      {diag.name}
                     </span>
                     {doneBefore && (
-                      <span className="text-[11px] font-medium text-emerald-700 inline-flex items-center gap-1 shrink-0">
+                      <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1 shrink-0">
                         <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                         Previo
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    {fmt(tool.summary)}
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                    {diag.summary}
                   </p>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    <strong className="text-slate-700">Revela:</strong>{' '}
-                    {fmt(tool.revealsDescription)}
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    <strong className="text-slate-700 dark:text-slate-200">
+                      {isSimple ? '¿Qué descubre?' : 'Revela:'}
+                    </strong>{' '}
+                    {diag.revealsDescription}
                   </p>
                 </button>
               );
@@ -189,8 +226,12 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
           <>
             {offeredTherapies.map((therapy) => {
               const isSelected = selectedTherapyId === therapy.id;
-              const toxLabel =
-                therapy.toxicityDelta < 0
+              const info = getTherapyDisplayInfo(therapy, molecularDetail);
+              const toxLabel = isSimple
+                ? therapy.toxicityDelta <= 0
+                  ? 'Alivia desgaste'
+                  : `Desgaste +${therapy.toxicityDelta}`
+                : therapy.toxicityDelta < 0
                   ? `Efectos ${therapy.toxicityDelta}`
                   : `Efectos +${therapy.toxicityDelta}`;
               return (
@@ -201,32 +242,34 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
                   onClick={() => setSelectedTherapyId(therapy.id)}
                   className={`w-full text-left p-3.5 rounded-lg border transition-all duration-150 cursor-pointer space-y-1.5 ${
                     isSelected
-                      ? 'border-sky-600 bg-sky-50/50 ring-1 ring-sky-600'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
+                      ? 'border-sky-600 dark:border-sky-400 bg-sky-50/50 dark:bg-sky-950/50 ring-1 ring-sky-600 dark:ring-sky-400'
+                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700'
                   }`}
                 >
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-semibold text-slate-900 leading-snug">
-                      {getTherapyDisplayName(therapy, molecularDetail)}
+                    <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
+                      {info.name}
                     </span>
                     <span
                       className={`text-[11px] font-mono shrink-0 ${
                         therapy.toxicityDelta <= 0
-                          ? 'text-emerald-700'
+                          ? 'text-emerald-700 dark:text-emerald-400'
                           : therapy.toxicityDelta >= 24
-                            ? 'text-rose-600'
-                            : 'text-slate-500'
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-slate-500 dark:text-slate-400'
                       }`}
                     >
                       {toxLabel}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    {fmt(therapy.mechanism)}
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                    {info.mechanism}
                   </p>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    <strong className="text-slate-700">Efecto celular:</strong>{' '}
-                    {fmt(therapy.cloneEffectsSummary)}
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    <strong className="text-slate-700 dark:text-slate-200">
+                      {isSimple ? '¿Cómo actúa?' : 'Efecto celular:'}
+                    </strong>{' '}
+                    {info.cloneEffectsSummary}
                   </p>
                 </button>
               );
@@ -236,7 +279,7 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
       </div>
 
       {/* Action Footer: Primary Decision + Always-Available Observation Skip */}
-      <div className="p-3.5 border-t border-slate-200 bg-slate-50/70 space-y-2">
+      <div className="p-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 space-y-2">
         <button
           type="button"
           data-testid="oncologist-confirm-btn"
@@ -245,13 +288,19 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
           className={`w-full py-2.5 px-4 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors ${
             canConfirm
               ? isDiagnosticPhase
-                ? 'bg-cyan-700 hover:bg-cyan-600 text-white cursor-pointer'
-                : 'bg-sky-700 hover:bg-sky-600 text-white cursor-pointer'
-              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                ? 'bg-cyan-700 hover:bg-cyan-600 dark:bg-cyan-600 dark:hover:bg-cyan-500 text-white cursor-pointer'
+                : 'bg-sky-700 hover:bg-sky-600 dark:bg-sky-600 dark:hover:bg-sky-500 text-white cursor-pointer'
+              : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
           }`}
         >
           <span>
-            {isDiagnosticPhase ? 'Realizar diagnóstico' : 'Aplicar intervención'}
+            {isDiagnosticPhase
+              ? isSimple
+                ? 'Hacer este examen'
+                : 'Realizar diagnóstico'
+              : isSimple
+                ? 'Aplicar este tratamiento'
+                : 'Aplicar intervención'}
           </span>
           <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
@@ -260,11 +309,13 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
           type="button"
           data-testid="oncologist-observe-btn"
           onClick={onResolveObservation}
-          className="w-full py-2 px-3 rounded-lg text-xs font-semibold text-emerald-800 bg-white border border-emerald-300 hover:bg-emerald-50 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          className="w-full py-2 px-3 rounded-lg text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
         >
-          <Eye className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
-          <span>Observación (saltar esta ronda)</span>
-          <SkipForward className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+          <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          <span>
+            {isSimple ? 'Solo observar y descansar (saltar ronda)' : 'Observación (saltar esta ronda)'}
+          </span>
+          <SkipForward className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
         </button>
       </div>
     </div>

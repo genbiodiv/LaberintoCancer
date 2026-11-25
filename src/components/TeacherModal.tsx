@@ -103,13 +103,13 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="teacher-modal-title"
-      className="fixed inset-0 z-50 bg-slate-900/45 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-slate-900/45 dark:bg-black/70 flex items-center justify-center p-4"
     >
-      <div className="bg-white border border-slate-200 rounded-xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-lg">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-lg">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-950/70">
           <div className="flex items-center gap-2">
-            <SlidersHorizontal className="w-4 h-4 text-sky-600" aria-hidden="true" />
-            <h2 id="teacher-modal-title" className="text-base font-bold text-slate-900">
+            <SlidersHorizontal className="w-4 h-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+            <h2 id="teacher-modal-title" className="text-base font-bold text-slate-900 dark:text-white">
               Modo docente · Configuración de sesión
             </h2>
           </div>
@@ -117,7 +117,7 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Cerrar modo docente"
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -136,7 +136,7 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
             <div>
               <label
                 htmlFor="teacher-mode"
-                className="block text-xs font-semibold text-slate-700 mb-1"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
               >
                 Modo sugerido
               </label>
@@ -144,7 +144,7 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
                 id="teacher-mode"
                 value={draft.defaultMode}
                 onChange={(e) => setDraft({ ...draft, defaultMode: e.target.value as GameMode })}
-                className="w-full h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-900"
+                className="w-full h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-slate-100"
               >
                 <option value="cancer">Modo Cáncer</option>
                 <option value="oncologist">Modo Oncólogo</option>
@@ -154,10 +154,10 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
             <div>
               <label
                 htmlFor="teacher-genes"
-                className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1"
+                className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
               >
                 <span>Límite de genes visibles</span>
-                <span className="font-mono text-slate-900 tabular-nums">
+                <span className="font-mono text-slate-900 dark:text-white tabular-nums">
                   {draft.maxGenesVisible}
                 </span>
               </label>
@@ -169,23 +169,23 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
                 step={1}
                 value={draft.maxGenesVisible}
                 onChange={(e) => setDraft({ ...draft, maxGenesVisible: Number(e.target.value) })}
-                className="w-full accent-sky-600"
+                className="w-full accent-sky-600 dark:accent-sky-400"
               />
             </div>
           </div>
 
           {/* Toggles */}
-          <div className="space-y-2.5 pt-2 border-t border-slate-100">
-            <label className="flex items-center justify-between gap-3 text-xs text-slate-700 cursor-pointer">
+          <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <label className="flex items-center justify-between gap-3 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
               <span>Activar pistas pedagógicas durante la partida</span>
               <input
                 type="checkbox"
                 checked={draft.hintsEnabled}
                 onChange={(e) => setDraft({ ...draft, hintsEnabled: e.target.checked })}
-                className="w-4 h-4 accent-sky-600"
+                className="w-4 h-4 accent-sky-600 dark:accent-sky-400"
               />
             </label>
-            <label className="flex items-center justify-between gap-3 text-xs text-slate-700 cursor-pointer">
+            <label className="flex items-center justify-between gap-3 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
               <span>Mostrar información molecular completa desde inicio en Modo Oncólogo</span>
               <input
                 type="checkbox"
@@ -193,23 +193,23 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
                 onChange={(e) =>
                   setDraft({ ...draft, revealMolecularInOncologist: e.target.checked })
                 }
-                className="w-4 h-4 accent-sky-600"
+                className="w-4 h-4 accent-sky-600 dark:accent-sky-400"
               />
             </label>
           </div>
 
           {/* Custom COSMIC Table Upload */}
-          <div className="pt-3 border-t border-slate-100 space-y-2">
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-900">
+              <span className="text-xs font-semibold text-slate-900 dark:text-white">
                 Cargar tabla de genes y evidencias (COSMIC HoC)
               </span>
-              <span className="text-[11px] font-mono text-slate-500">
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                 {customEvidenceCount} registros adicionales
               </span>
             </div>
-            <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-slate-300 hover:border-sky-400 bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer transition-colors">
-              <Upload className="w-4 h-4 text-sky-600" aria-hidden="true" />
+            <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 hover:border-sky-400 dark:hover:border-sky-500 bg-slate-50 dark:bg-slate-950/60 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer transition-colors">
+              <Upload className="w-4 h-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
               <span>Seleccionar archivo .xlsx, .csv o .json</span>
               <input
                 type="file"
@@ -218,19 +218,19 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
                 className="sr-only"
               />
             </label>
-            {uploadStatus && <p className="text-xs text-sky-800">{uploadStatus}</p>}
+            {uploadStatus && <p className="text-xs text-sky-800 dark:text-sky-300">{uploadStatus}</p>}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/70 flex items-center justify-between gap-3">
+        <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => {
               onResetSimulation();
               onClose();
             }}
-            className="px-3.5 py-2 rounded-lg text-xs font-medium text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2 rounded-lg text-xs font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 inline-flex items-center gap-1.5 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
             Reiniciar simulación activa
@@ -239,7 +239,7 @@ export const TeacherModal: React.FC<TeacherModalProps> = ({
           <button
             type="button"
             onClick={handleApply}
-            className="px-5 py-2 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 cursor-pointer"
+            className="px-5 py-2 rounded-lg text-xs font-semibold text-white bg-slate-900 dark:bg-sky-600 hover:bg-slate-800 dark:hover:bg-sky-500 cursor-pointer"
           >
             Guardar configuración
           </button>

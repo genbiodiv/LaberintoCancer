@@ -5,11 +5,13 @@ import {
   Dna,
   FlaskConical,
   HelpCircle,
+  Lightbulb,
   Lock,
   ShieldAlert,
 } from 'lucide-react';
 import { GENES_LIBRARY } from '../engine/knowledgeBase';
 import {
+  describeCurrentSituationSimple,
   formatBiologyText,
   getGeneDisplayTitle,
 } from '../engine/molecularAbstraction';
@@ -100,11 +102,15 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
   return (
     <aside
       aria-label="Panel de evolución clonal y acciones"
-      className="bg-white border border-slate-200 rounded-xl flex flex-col h-full overflow-hidden"
+      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col h-full overflow-hidden"
     >
       {/* Clean Tab Header */}
-      <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
-        <div role="tablist" aria-label="Secciones de modo cáncer" className="flex items-center gap-1 p-0.5 bg-slate-200/70 rounded-lg">
+      <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 flex items-center justify-between gap-2">
+        <div
+          role="tablist"
+          aria-label="Secciones de modo cáncer"
+          className="flex items-center gap-1 p-0.5 bg-slate-200/70 dark:bg-slate-800 rounded-lg"
+        >
           <button
             type="button"
             role="tab"
@@ -112,8 +118,8 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
             onClick={() => setTab('actions')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               tab === 'actions'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <FlaskConical className="w-3.5 h-3.5" aria-hidden="true" />
@@ -126,14 +132,16 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
             onClick={() => setTab('genes')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               tab === 'genes'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Dna className="w-3.5 h-3.5" aria-hidden="true" />
             {molecularDetail === 'precision'
               ? `Genes (${visibleLibraryGenes.length})`
-              : `Procesos (${visibleLibraryGenes.length})`}
+              : molecularDetail === 'simple'
+                ? `Piezas (${visibleLibraryGenes.length})`
+                : `Procesos (${visibleLibraryGenes.length})`}
           </button>
         </div>
 
@@ -142,7 +150,7 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
             type="button"
             onClick={() => setShowHint((v) => !v)}
             aria-expanded={showHint}
-            className="text-xs font-medium text-slate-500 hover:text-slate-900 inline-flex items-center gap-1 cursor-pointer"
+            className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 cursor-pointer"
           >
             <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
             Pista
@@ -154,25 +162,42 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {tab === 'actions' ? (
           <>
+            {molecularDetail === 'simple' && (
+              <div
+                data-testid="simple-situation-callout"
+                className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/40 px-3 py-2 text-[11px] text-emerald-950 dark:text-emerald-200 leading-snug flex items-start gap-2"
+              >
+                <Lightbulb
+                  className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5"
+                  aria-hidden="true"
+                />
+                <span>{describeCurrentSituationSimple(state)}</span>
+              </div>
+            )}
+
             {/* Step 1: Biological Barrier / Event */}
             <section className="space-y-1.5">
-              <div className="flex items-center gap-2 text-xs font-semibold text-rose-700">
+              <div className="flex items-center gap-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
                 <ShieldAlert className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span>1. {formatBiologyText(round.title, molecularDetail)}</span>
               </div>
-              <p className="text-xs text-slate-700 leading-snug">
+              <p className="text-xs text-slate-700 dark:text-slate-300 leading-snug">
                 {formatBiologyText(round.cancerPrompt, molecularDetail)}
               </p>
 
               {state.accumulatedProblems.length > 0 && (
-                <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 space-y-0.5">
-                  <div className="font-semibold text-slate-800">
-                    Problemas acumulados ({state.accumulatedProblems.length})
+                <div className="text-[11px] text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-2 space-y-0.5">
+                  <div className="font-semibold text-slate-800 dark:text-slate-100">
+                    {molecularDetail === 'simple'
+                      ? `Cambios acumulados (${state.accumulatedProblems.length})`
+                      : `Problemas acumulados (${state.accumulatedProblems.length})`}
                   </div>
-                  <div className="text-slate-600 leading-snug">
+                  <div className="text-slate-600 dark:text-slate-300 leading-snug">
                     {state.accumulatedProblems
                       .map((p) =>
-                        molecularDetail === 'precision' ? p.precisionLabel : p.logicLabel
+                        molecularDetail === 'precision'
+                          ? p.precisionLabel
+                          : formatBiologyText(p.logicLabel, molecularDetail)
                       )
                       .join(' → ')}
                   </div>
@@ -182,7 +207,7 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
 
             {/* Step 2: Clonal Selection Choice */}
             <section className="space-y-2">
-              <span className="block text-xs font-semibold text-slate-900">
+              <span className="block text-xs font-semibold text-slate-900 dark:text-white">
                 2. Bifurcación celular
               </span>
 
@@ -201,30 +226,30 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
                       }}
                       className={`w-full text-left p-2.5 rounded-lg border transition-all cursor-pointer ${
                         selected
-                          ? 'border-rose-500 bg-rose-50/50 ring-1 ring-rose-500'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                          ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/40 ring-1 ring-rose-500'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="text-xs font-semibold text-slate-900 leading-snug">
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
                           {formatBiologyText(opt.label, molecularDetail)}
                         </span>
                         {clone && (
-                          <span className="font-mono text-xs font-semibold text-slate-700 tabular-nums shrink-0">
+                          <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-200 tabular-nums shrink-0">
                             {clone.share}%
                           </span>
                         )}
                       </div>
                       <div className="mt-1.5 space-y-0.5 text-[11px] leading-snug">
-                        <div className="text-emerald-700">
+                        <div className="text-emerald-700 dark:text-emerald-400">
                           + {formatBiologyText(opt.advantage, molecularDetail)}
                         </div>
-                        <div className="text-amber-700">
+                        <div className="text-amber-700 dark:text-amber-400">
                           − {formatBiologyText(opt.cost, molecularDetail)}
                         </div>
                       </div>
                       {showHint && (
-                        <div className="mt-1.5 pt-1.5 border-t border-slate-200/70 text-[11px] text-sky-700">
+                        <div className="mt-1.5 pt-1.5 border-t border-slate-200/70 dark:border-slate-800 text-[11px] text-sky-700 dark:text-sky-400">
                           {formatBiologyText(opt.recommendedContextHint, molecularDetail)}
                         </div>
                       )}
@@ -236,7 +261,7 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
 
             {/* Step 3: Prediction Gate */}
             <section className="space-y-2">
-              <span className="block text-xs font-semibold text-slate-900">
+              <span className="block text-xs font-semibold text-slate-900 dark:text-white">
                 3. Predicción para abrir la puerta
               </span>
               <div className="space-y-1.5">
@@ -251,20 +276,20 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
                       className={`w-full text-left p-2.5 rounded-lg border text-xs transition-colors flex items-start gap-2 cursor-pointer ${
                         selected
                           ? rejected
-                            ? 'border-rose-600 bg-rose-50 text-rose-950 font-medium'
-                            : 'border-slate-900 bg-slate-900 text-white'
+                            ? 'border-rose-600 bg-rose-50 dark:bg-rose-950/70 text-rose-950 dark:text-rose-100 font-medium'
+                            : 'border-slate-900 dark:border-sky-400 bg-slate-900 dark:bg-sky-600 text-white'
                           : rejected
-                            ? 'border-rose-200 bg-rose-50/40 text-rose-800 hover:bg-rose-50'
-                            : 'border-slate-200 bg-slate-50 hover:bg-white text-slate-700'
+                            ? 'border-rose-200 dark:border-rose-800/80 bg-rose-50/40 dark:bg-rose-950/30 text-rose-800 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50'
+                            : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
                       }`}
                     >
                       <span
                         className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
                           rejected
-                            ? 'border-rose-400 bg-rose-100 text-rose-700'
+                            ? 'border-rose-400 bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300'
                             : selected
                               ? 'border-white bg-white text-slate-900'
-                              : 'border-slate-400'
+                              : 'border-slate-400 dark:border-slate-500'
                         }`}
                       >
                         {rejected ? (
@@ -285,13 +310,13 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
                 <div
                   role="alert"
                   data-testid="door-locked-alert"
-                  className="p-2.5 rounded-lg border border-rose-300 bg-rose-50 text-xs text-rose-950 space-y-1"
+                  className="p-2.5 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/60 text-xs text-rose-950 dark:text-rose-100 space-y-1"
                 >
-                  <div className="font-semibold text-rose-900 inline-flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 shrink-0 text-rose-600" aria-hidden="true" />
+                  <div className="font-semibold text-rose-900 dark:text-rose-200 inline-flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 shrink-0 text-rose-600 dark:text-rose-400" aria-hidden="true" />
                     <span>Puerta bloqueada</span>
                   </div>
-                  <p className="text-[11px] text-rose-900/90 leading-snug">
+                  <p className="text-[11px] text-rose-900/90 dark:text-rose-200/90 leading-snug">
                     {activeDoorLock.feedback}
                   </p>
                 </div>
@@ -304,21 +329,21 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
             {visibleLibraryGenes.map((gene) => (
               <div
                 key={gene.symbol}
-                className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/50 space-y-1"
+                className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 space-y-1"
               >
                 <div className="flex items-baseline justify-between gap-2">
                   <span
-                    className={`text-xs font-bold text-slate-900 ${
+                    className={`text-xs font-bold text-slate-900 dark:text-white ${
                       molecularDetail === 'precision' ? 'font-mono' : ''
                     }`}
                   >
                     {getGeneDisplayTitle(gene, molecularDetail)}
                   </span>
-                  <span className="text-[10px] text-slate-500">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">
                     {formatBiologyText(gene.pathway, molecularDetail)}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-600 leading-snug">
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
                   {formatBiologyText(gene.normalFunction, molecularDetail)}
                 </p>
               </div>
@@ -329,12 +354,12 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
 
       {/* Primary Action Footer */}
       {tab === 'actions' && (
-        <div className="p-4 border-t border-slate-200 bg-slate-50/60">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60">
           <button
             type="button"
             onClick={handleSubmit}
             disabled={!canResolve}
-            className="w-full py-2.5 px-4 rounded-lg text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:text-slate-500 transition-colors inline-flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-2.5 px-4 rounded-lg text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 transition-colors inline-flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>Abrir puerta · Ronda {state.currentRound}</span>
             <ArrowRight className="w-4 h-4" aria-hidden="true" />

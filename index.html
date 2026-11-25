@@ -21,8 +21,26 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (function () {
+        try {
+          var p = new URLSearchParams(window.location.search).get('theme');
+          var t = p === 'dark' || p === 'light' ? p : localStorage.getItem('el_laberinto_theme_v1');
+          if (!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            t = 'dark';
+          }
+          if (t === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.dataset.theme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.dataset.theme = 'light';
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-slate-50 text-slate-900 antialiased selection:bg-sky-100 selection:text-sky-900">
+  <body class="bg-slate-50 text-slate-900 dark:bg-[#0b1220] dark:text-slate-100 antialiased selection:bg-sky-100 selection:text-sky-900 dark:selection:bg-sky-900/60 dark:selection:text-sky-100">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

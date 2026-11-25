@@ -11,6 +11,7 @@ import {
   DoorOpen,
   Eye,
   Gamepad2,
+  Lightbulb,
   Lock,
   Maximize2,
   Microscope,
@@ -55,8 +56,12 @@ import {
   resolvePlayerMovement,
 } from '../engine/labyrinthLayout';
 import {
+  describeCurrentSituationSimple,
   formatBiologyText,
-  getTherapyDisplayName,
+  getDetailModeLabel,
+  getDiagnosticDisplayInfo,
+  getOncologistStageInfo,
+  getTherapyDisplayInfo,
 } from '../engine/molecularAbstraction';
 import {
   combineControlInputs,
@@ -78,6 +83,8 @@ import {
   SimulationState,
   TherapyId,
 } from '../engine/types';
+import { ThemeMode } from '../utils/storage';
+import { ThemeToggle } from './ThemeToggle';
 import {
   BioGrowthRig,
   createChamberTotemGroup,
@@ -98,6 +105,9 @@ interface Labyrinth3DViewProps {
   state: SimulationState;
   molecularDetail: MolecularDetailMode;
   isExpanded: boolean;
+  themeMode?: ThemeMode;
+  onThemeChange?: (next: ThemeMode) => void;
+  onMolecularDetailChange?: (next: MolecularDetailMode) => void;
   onToggleExpand?: () => void;
   onBackHome?: () => void;
   onSwitchToText?: () => void;
@@ -167,6 +177,9 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   state,
   molecularDetail,
   isExpanded,
+  themeMode = 'light',
+  onThemeChange,
+  onMolecularDetailChange,
   onToggleExpand,
   onBackHome,
   onSwitchToText,
@@ -1587,28 +1600,36 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     if (selectedPortal.portalKind === 'diagnostic') {
       const tool = DIAGNOSTIC_TOOLS.find((t) => t.id === selectedPortal.actionId);
       if (!tool) return null;
+      const diagInfo = getDiagnosticDisplayInfo(tool, molecularDetail);
       return {
         requiresPrediction: false as const,
         kind: 'diagnostic' as const,
-        title: formatBiologyText(tool.name, molecularDetail),
-        summary: formatBiologyText(tool.summary, molecularDetail),
-        secondaryDetail: formatBiologyText(tool.revealsDescription, molecularDetail),
-        costTag: 'Fase de diagnóstico · Sin toxicidad farmacológica',
-        ctaLabel: 'Realizar diagnóstico',
+        title: diagInfo.name,
+        summary: diagInfo.summary,
+        secondaryDetail: diagInfo.revealsDescription,
+        costTag:
+          molecularDetail === 'simple'
+            ? 'Ronda de estudio · No produce efectos secundarios'
+            : 'Fase de diagnóstico · Sin toxicidad farmacológica',
+        ctaLabel: molecularDetail === 'simple' ? 'Hacer este estudio' : 'Realizar diagnóstico',
         predictions: [],
       };
     }
 
     const therapy = getTherapyById(selectedPortal.actionId as TherapyId);
     if (!therapy) return null;
+    const therapyInfo = getTherapyDisplayInfo(therapy, molecularDetail);
     return {
       requiresPrediction: false as const,
       kind: 'intervention' as const,
-      title: getTherapyDisplayName(therapy, molecularDetail),
-      summary: formatBiologyText(therapy.mechanism, molecularDetail),
-      secondaryDetail: formatBiologyText(therapy.cloneEffectsSummary, molecularDetail),
-      costTag: `Efectos secundarios ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`,
-      ctaLabel: 'Aplicar intervención',
+      title: therapyInfo.name,
+      summary: therapyInfo.mechanism,
+      secondaryDetail: therapyInfo.cloneEffectsSummary,
+      costTag:
+        molecularDetail === 'simple'
+          ? `Desgaste al cuerpo ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`
+          : `Efectos secundarios ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`,
+      ctaLabel: molecularDetail === 'simple' ? 'Aplicar tratamiento' : 'Aplicar intervención',
       predictions: [],
     };
   }, [selectedPortal, doorOpenNonce, currentRoundDef, state.mode, molecularDetail]);
@@ -1819,22 +1840,59 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         />
       )}
 
-      {/* Top-Left Controls: Back to Start + Minimal Destination & Severity Chip */}
+      {/* Top-Left Controls: Back to Start + Theme Toggle + Language Switch + Destination & Severity Chip */}
       <div className="pointer-events-none absolute top-3 left-3 flex flex-col items-start gap-2">
-        {onBackHome && (
-          <button
-            type="button"
-            onClick={onBackHome}
-            className="pointer-events-auto bg-slate-950/92 hover:bg-slate-900 border border-slate-600/90 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-100 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5 text-slate-300" aria-hidden="true" />
-            Volver al inicio
-          </button>
+        {(onBackHome || onThemeChange || onMolecularDetailChange) && (
+          <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+            {onBackHome && (
+              <button
+                type="button"
+                onClick={onBackHome}
+                className="bg-slate-950/92 hover:bg-slate-900 border border-slate-600/90 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-100 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-slate-300" aria-hidden="true" />
+                Volver al inicio
+              </button>
+            )}
+            {onMolecularDetailChange && (
+              <button
+                type="button"
+                data-testid="hud-detail-cycle-btn"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  const next: MolecularDetailMode =
+                    molecularDetail === 'simple'
+                      ? 'logic'
+                      : molecularDetail === 'logic'
+                        ? 'precision'
+                        : 'simple';
+                  onMolecularDetailChange(next);
+                }}
+                title="Cambiar nivel de lenguaje (Simple / Lógica / Precisión)"
+                className={`border rounded-lg px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  molecularDetail === 'simple'
+                    ? 'bg-emerald-950/92 hover:bg-emerald-900 border-emerald-500/80 text-emerald-200'
+                    : 'bg-slate-950/92 hover:bg-slate-900 border-slate-600/90 text-slate-100'
+                }`}
+              >
+                <Lightbulb
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    molecularDetail === 'simple' ? 'text-emerald-400' : 'text-sky-400'
+                  }`}
+                  aria-hidden="true"
+                />
+                <span>{getDetailModeLabel(molecularDetail)}</span>
+              </button>
+            )}
+            {onThemeChange && (
+              <ThemeToggle theme={themeMode} onChange={onThemeChange} variant="hud" />
+            )}
+          </div>
         )}
 
-        <div className="w-[218px] sm:w-[248px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 space-y-1.5">
+        <div className="w-[248px] sm:w-[282px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 space-y-1.5">
           <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
               {state.mode === 'oncologist' ? (
                 oncologistPhase === 'diagnostic' ? (
                   <Microscope className="w-3.5 h-3.5 shrink-0 text-cyan-400" aria-hidden="true" />
@@ -1847,10 +1905,18 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
               <span>
                 Ronda {state.currentRound}
                 {state.mode === 'oncologist' &&
-                  ` · ${oncologistPhase === 'diagnostic' ? 'Diagnóstico' : 'Intervención'}`}
+                  ` · ${
+                    oncologistPhase === 'diagnostic'
+                      ? molecularDetail === 'simple'
+                        ? 'Estudio'
+                        : 'Diagnóstico'
+                      : molecularDetail === 'simple'
+                        ? 'Tratamiento'
+                        : 'Intervención'
+                  }`}
               </span>
             </span>
-            <span className="text-slate-200 font-semibold tabular-nums">
+            <span className="text-slate-200 font-semibold tabular-nums whitespace-nowrap shrink-0">
               {state.mode === 'cancer'
                 ? `Cáncer ${destination.progress}%`
                 : `Liberación ${destination.progress}%`}
@@ -1873,9 +1939,15 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           <div className="flex items-center justify-between gap-2 text-[11px]">
             <span className="font-semibold text-white truncate">
               {state.mode === 'oncologist'
-                ? oncologistPhase === 'diagnostic'
-                  ? 'Puertas de diagnóstico'
-                  : 'Puertas de intervención'
+                ? `${getOncologistStageInfo(state.oncologistStartStage ?? 'early', molecularDetail).label} · ${
+                    oncologistPhase === 'diagnostic'
+                      ? molecularDetail === 'simple'
+                        ? 'Estudiar'
+                        : 'Diagnóstico'
+                      : molecularDetail === 'simple'
+                        ? 'Tratar'
+                        : 'Intervención'
+                  }`
                 : theme.phaseLabel}
             </span>
             <span className="font-mono text-slate-400 tabular-nums shrink-0">
@@ -1904,6 +1976,14 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
               {severity.heartbeatBpm} ppm
             </span>
           </div>
+          {molecularDetail === 'simple' && (
+            <p
+              data-testid="labyrinth-simple-summary"
+              className="pt-1.5 border-t border-slate-800/90 text-[11px] leading-snug text-emerald-200/95"
+            >
+              {describeCurrentSituationSimple(state)}
+            </p>
+          )}
         </div>
 
         {/* Always-available Observation Skip Button in Oncologist Mode */}

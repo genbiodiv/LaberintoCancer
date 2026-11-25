@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
@@ -12,6 +14,14 @@
     font-family: var(--font-sans);
     background-color: #f8fafc;
     color: #0f172a;
+    color-scheme: light;
+  }
+
+  html.dark,
+  html.dark body {
+    background-color: #0b1220;
+    color: #f1f5f9;
+    color-scheme: dark;
   }
 }
 
@@ -34,6 +44,24 @@
 
 .react-flow__controls-button:hover {
   background: #f1f5f9 !important;
+}
+
+html.dark .react-flow__controls {
+  border-color: #334155 !important;
+}
+
+html.dark .react-flow__controls-button {
+  background: #0f172a !important;
+  border-bottom-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark .react-flow__controls-button:hover {
+  background: #1e293b !important;
+}
+
+html.dark .react-flow__controls-button svg {
+  fill: currentColor !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

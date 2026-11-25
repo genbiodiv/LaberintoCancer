@@ -6,6 +6,7 @@ import {
   Dna,
   FileText,
   Home,
+  Lightbulb,
   Microscope,
 } from 'lucide-react';
 import { CancerPanel } from './components/CancerPanel';
@@ -18,6 +19,7 @@ import { ReportView } from './components/ReportView';
 import { SplashScreen } from './components/SplashScreen';
 import { StartScreen } from './components/StartScreen';
 import { TeacherModal } from './components/TeacherModal';
+import { ThemeToggle } from './components/ThemeToggle';
 import { TurnFeedbackModal } from './components/TurnFeedbackModal';
 import { TutorialModal } from './components/TutorialModal';
 import { clampDecisionRoundCount } from './engine/decisionTree';
@@ -43,6 +45,7 @@ import {
   DiagnosticToolId,
   GameMode,
   MolecularDetailMode,
+  OncologistStartStage,
   PlayMode,
   SimulationState,
   TeacherConfig,
@@ -54,10 +57,13 @@ import {
   loadCompletedRuns,
   loadCustomEvidence,
   loadTeacherConfig,
+  loadThemeMode,
   saveActiveSession,
   saveCompletedRun,
   saveCustomEvidence,
   saveTeacherConfig,
+  saveThemeMode,
+  ThemeMode,
 } from './utils/storage';
 
 type ScreenView = 'splash' | 'start' | 'playing' | 'report' | 'compare';
@@ -72,8 +78,18 @@ export default function App() {
   );
 
   // Lobby & global configuration state (unified start, unlimited-only progression)
+  const [theme, setTheme] = useState<ThemeMode>(() => loadThemeMode());
   const [playMode, setPlayMode] = useState<PlayMode>('labyrinth');
   const [molecularDetail, setMolecularDetail] = useState<MolecularDetailMode>('logic');
+  const [oncologistStartStage, setOncologistStartStage] =
+    useState<OncologistStartStage>('early');
+
+  useEffect(() => {
+    const isDark = theme === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.dataset.theme = theme;
+    saveThemeMode(theme);
+  }, [theme]);
 
   // Active simulation & view state (starts on Splash page with instructions)
   const [session, setSession] = useState<SimulationState | null>(() => loadActiveSession());
@@ -121,11 +137,12 @@ export default function App() {
     }
   };
 
-  // Optional ?autostart=1&mode=cancer|oncologist&playMode=labyrinth|text&detail=logic|precision&view=...
+  // Optional ?autostart=1&mode=cancer|oncologist&playMode=labyrinth|text&detail=simple|logic|precision&stage=surveillance|early|advanced&view=...
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const pmParam = params.get('playMode');
     const detailParam = params.get('detail');
+    const stageParam = params.get('stage');
     const vParam = params.get('view');
 
     let resolvedPlayMode: PlayMode = 'labyrinth';
@@ -134,8 +151,14 @@ export default function App() {
       setPlayMode(pmParam);
     }
 
-    if (detailParam === 'logic' || detailParam === 'precision') {
+    if (detailParam === 'simple' || detailParam === 'logic' || detailParam === 'precision') {
       setMolecularDetail(detailParam);
+    }
+
+    let resolvedStage: OncologistStartStage = 'early';
+    if (stageParam === 'surveillance' || stageParam === 'early' || stageParam === 'advanced') {
+      resolvedStage = stageParam;
+      setOncologistStartStage(stageParam);
     }
 
     if (vParam === 'labyrinth' || vParam === 'network' || vParam === 'clones') {
@@ -154,7 +177,8 @@ export default function App() {
         teacherConfig,
         5,
         undefined,
-        true
+        true,
+        resolvedStage
       );
       setSession(fresh);
       saveActiveSession(fresh);
@@ -168,7 +192,8 @@ export default function App() {
     saveActiveSession(session);
   }, [session]);
 
-  const handleStartMode = (mode: GameMode) => {
+  const handleStartMode = (mode: GameMode, overrideStage?: OncologistStartStage) => {
+    const stageToUse = overrideStage ?? oncologistStartStage;
     const fresh = createInitialSimulation(
       mode,
       'UNIFIED',
@@ -177,7 +202,8 @@ export default function App() {
       teacherConfig,
       5,
       undefined,
-      true
+      true,
+      stageToUse
     );
     setSession(fresh);
     setPendingResolution(null);
@@ -310,14 +336,24 @@ export default function App() {
 
   return (
     <>
-      {view === 'splash' && <SplashScreen onContinue={() => setView('start')} />}
+      {view === 'splash' && (
+        <SplashScreen
+          theme={theme}
+          onThemeChange={setTheme}
+          onContinue={() => setView('start')}
+        />
+      )}
 
       {view === 'start' && (
         <StartScreen
+          theme={theme}
+          onThemeChange={setTheme}
           playMode={playMode}
           onPlayModeChange={handlePlayModeChange}
           molecularDetail={molecularDetail}
           onMolecularDetailChange={setMolecularDetail}
+          oncologistStartStage={oncologistStartStage}
+          onOncologistStartStageChange={setOncologistStartStage}
           onStartMode={(m) => handleStartMode(m)}
           onOpenSplash={() => setView('splash')}
           onOpenTutorial={() => setTutorialOpen(true)}
@@ -335,10 +371,14 @@ export default function App() {
           data-mode={session.mode}
           data-play-mode="labyrinth"
           data-detail={molecularDetail}
+          data-oncologist-stage={session.oncologistStartStage ?? ''}
         >
           <Labyrinth3DView
             state={session}
             molecularDetail={molecularDetail}
+            onMolecularDetailChange={setMolecularDetail}
+            themeMode={theme}
+            onThemeChange={setTheme}
             isExpanded={true}
             onBackHome={() => setView('start')}
             onSwitchToText={() => handlePlayModeChange('text')}
@@ -364,35 +404,40 @@ export default function App() {
 
       {view === 'playing' && session && playMode === 'text' && (
         <div
-          className="min-h-screen bg-slate-50 flex flex-col"
+          className="min-h-screen bg-slate-50 dark:bg-[#0b1220] text-slate-900 dark:text-slate-100 flex flex-col transition-colors"
           data-state="playing"
           data-mode={session.mode}
           data-play-mode={playMode}
           data-detail={molecularDetail}
         >
           {/* Clean 3-Zone Top Bar */}
-          <header className="w-full border-b border-slate-200 bg-white shrink-0">
+          <header className="w-full border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/95 shrink-0 transition-colors">
             <div className="max-w-[1600px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
               {/* Zone 1: Wordmark + Role & Round */}
               <div className="flex items-center gap-3 whitespace-nowrap shrink-0">
                 <div className="flex items-center gap-2">
                   <Dna
                     className={`w-5 h-5 ${
-                      session.mode === 'cancer' ? 'text-rose-600' : 'text-sky-600'
+                      session.mode === 'cancer'
+                        ? 'text-rose-600 dark:text-rose-500'
+                        : 'text-sky-600 dark:text-sky-400'
                     }`}
                     aria-hidden="true"
                   />
-                  <span className="text-base font-bold tracking-tight text-slate-900">
+                  <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
                     El laberinto del cáncer
                   </span>
                 </div>
-                <span className="hidden sm:inline text-slate-300" aria-hidden="true">
+                <span
+                  className="hidden sm:inline text-slate-300 dark:text-slate-700"
+                  aria-hidden="true"
+                >
                   |
                 </span>
-                <span className="hidden sm:inline text-xs font-semibold text-slate-900">
+                <span className="hidden sm:inline text-xs font-semibold text-slate-900 dark:text-slate-100">
                   {session.mode === 'cancer' ? 'Rol Cáncer' : 'Rol Oncólogo'}
                 </span>
-                <span className="hidden lg:inline font-mono text-xs text-slate-500 tabular-nums">
+                <span className="hidden lg:inline font-mono text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                   Ronda {session.currentRound} · {session.accumulatedProblems.length}{' '}
                   {session.accumulatedProblems.length === 1 ? 'cambio' : 'cambios'}
                 </span>
@@ -404,12 +449,12 @@ export default function App() {
                 <div
                   role="group"
                   aria-label="Cambiar modo de juego"
-                  className="flex items-center gap-0.5 p-0.5 bg-slate-100 rounded-lg"
+                  className="flex items-center gap-0.5 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg"
                 >
                   <button
                     type="button"
                     onClick={() => handlePlayModeChange('labyrinth')}
-                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors text-slate-600 hover:text-slate-900"
+                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                   >
                     <Box className="w-3 h-3" aria-hidden="true" />
                     Laberinto
@@ -417,26 +462,38 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => handlePlayModeChange('text')}
-                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors bg-white text-slate-900 shadow-xs"
+                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs"
                   >
                     <FileText className="w-3 h-3" aria-hidden="true" />
                     Texto
                   </button>
                 </div>
 
-                {/* Molecular Detail Switch */}
+                {/* 3-Tier Molecular Detail Switch */}
                 <div
                   role="group"
-                  aria-label="Cambiar nivel molecular"
-                  className="hidden md:flex items-center gap-0.5 p-0.5 bg-slate-100 rounded-lg"
+                  aria-label="Cambiar nivel de lenguaje"
+                  className="hidden md:flex items-center gap-0.5 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg"
                 >
+                  <button
+                    type="button"
+                    onClick={() => setMolecularDetail('simple')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                      molecularDetail === 'simple'
+                        ? 'bg-white dark:bg-slate-950 text-emerald-700 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Lightbulb className="w-3 h-3" aria-hidden="true" />
+                    Simple
+                  </button>
                   <button
                     type="button"
                     onClick={() => setMolecularDetail('logic')}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
                       molecularDetail === 'logic'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     <Cpu className="w-3 h-3" aria-hidden="true" />
@@ -447,8 +504,8 @@ export default function App() {
                     onClick={() => setMolecularDetail('precision')}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
                       molecularDetail === 'precision'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     <Microscope className="w-3 h-3" aria-hidden="true" />
@@ -457,12 +514,13 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Zone 3: Quick Guide & Home (Teacher Mode hidden behind 5x 'h') */}
-              <div className="flex items-center gap-3 shrink-0">
+              {/* Zone 3: Theme Toggle, Quick Guide & Home (Teacher Mode hidden behind 5x 'h') */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                <ThemeToggle theme={theme} onChange={setTheme} variant="compact" />
                 <button
                   type="button"
                   onClick={() => setTutorialOpen(true)}
-                  className="hidden xl:inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap cursor-pointer"
+                  className="hidden xl:inline-flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white whitespace-nowrap cursor-pointer"
                 >
                   <BookOpen className="w-3.5 h-3.5" aria-hidden="true" />
                   Guía
@@ -470,7 +528,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setView('start')}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <Home className="w-3.5 h-3.5" aria-hidden="true" />
                   Inicio
@@ -514,6 +572,7 @@ export default function App() {
                 state={session}
                 playMode={playMode}
                 molecularDetail={molecularDetail}
+                themeMode={theme}
                 stageTab={stageTab}
                 onStageTabChange={(next) => {
                   setStageTab(next);

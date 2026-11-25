@@ -4,7 +4,9 @@ export type OncologistRoundPhase = 'diagnostic' | 'intervention';
 
 export type PlayMode = 'text' | 'labyrinth';
 
-export type MolecularDetailMode = 'logic' | 'precision';
+export type MolecularDetailMode = 'simple' | 'logic' | 'precision';
+
+export type OncologistStartStage = 'surveillance' | 'early' | 'advanced';
 
 export type GameDuration = 'quick' | 'full';
 
@@ -352,6 +354,7 @@ export interface SimulationState {
   currentRound: number;
   maxRounds: number;
   unlimitedMode?: boolean;
+  oncologistStartStage?: OncologistStartStage;
   oncologistLiberation?: number; // 0-100 progress toward 100% liberation in unlimited Oncologist mode
   finished: boolean;
   outcomeCode?: FinalOutcomeCode;
@@ -399,6 +402,7 @@ export interface CompletedRunSummary {
   destinationReached?: boolean;
   roundsPlayed?: number;
   unlimitedMode?: boolean;
+  oncologistStartStage?: OncologistStartStage;
   playMode?: PlayMode;
   molecularDetail?: MolecularDetailMode;
   score: ScoreBreakdown;

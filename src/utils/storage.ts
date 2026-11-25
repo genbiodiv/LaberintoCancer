@@ -10,6 +10,38 @@ const ACTIVE_SESSION_KEY = 'gencircuit_active_session_v1';
 const COMPLETED_RUNS_KEY = 'gencircuit_completed_runs_v1';
 const TEACHER_CONFIG_KEY = 'gencircuit_teacher_config_v1';
 const CUSTOM_EVIDENCE_KEY = 'gencircuit_custom_evidence_v1';
+const THEME_MODE_KEY = 'el_laberinto_theme_v1';
+
+export type ThemeMode = 'light' | 'dark';
+
+export function loadThemeMode(): ThemeMode {
+  try {
+    if (typeof window !== 'undefined') {
+      const urlTheme = new URLSearchParams(window.location.search).get('theme');
+      if (urlTheme === 'dark' || urlTheme === 'light') return urlTheme;
+    }
+    const saved = localStorage.getItem(THEME_MODE_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) {
+      return 'dark';
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return 'light';
+}
+
+export function saveThemeMode(theme: ThemeMode): void {
+  try {
+    localStorage.setItem(THEME_MODE_KEY, theme);
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export function saveActiveSession(state: SimulationState | null): void {
   try {

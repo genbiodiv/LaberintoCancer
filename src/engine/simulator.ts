@@ -8,6 +8,7 @@ import {
 } from './knowledgeBase';
 import {
   applyProblemToClones,
+  createOncologistStageBaseline,
   createSeededRng,
   createUnifiedInitialClinical,
   createUnifiedInitialClones,
@@ -33,6 +34,7 @@ import {
   HallmarkId,
   MolecularDetailMode,
   OncologistCellModel,
+  OncologistStartStage,
   OrganismDefenses,
   PerspectiveComparison,
   PlayMode,
@@ -468,11 +470,23 @@ export function createInitialSimulation(
   teacherConfig: TeacherConfig = DEFAULT_TEACHER_CONFIG,
   customRoundCount?: number,
   explicitSeed?: number,
-  unlimitedMode: boolean = false
+  unlimitedMode: boolean = false,
+  oncologistStartStage: OncologistStartStage = 'early'
 ): SimulationState {
-  const clones = normalizeCloneShares(cloneArray(createUnifiedInitialClones()));
-  const defenses: OrganismDefenses = createUnifiedInitialDefenses();
-  const clinical: ClinicalState = createUnifiedInitialClinical();
+  const oncoBaseline =
+    mode === 'oncologist' ? createOncologistStageBaseline(oncologistStartStage) : null;
+  const clones = normalizeCloneShares(
+    cloneArray(oncoBaseline ? oncoBaseline.clones : createUnifiedInitialClones())
+  );
+  const defenses: OrganismDefenses = oncoBaseline
+    ? { ...oncoBaseline.defenses }
+    : createUnifiedInitialDefenses();
+  const clinical: ClinicalState = oncoBaseline
+    ? { ...oncoBaseline.clinical }
+    : createUnifiedInitialClinical();
+  const initialAccumulatedProblems = oncoBaseline ? [...oncoBaseline.accumulatedProblems] : [];
+  const initialLiberation = oncoBaseline ? oncoBaseline.initialLiberation : 16;
+
   const maxRounds =
     typeof customRoundCount === 'number'
       ? clamp(customRoundCount, 3, 10)
@@ -491,8 +505,9 @@ export function createInitialSimulation(
     roundNumber: 1,
     clones,
     clinical,
-    accumulatedProblems: [],
+    accumulatedProblems: initialAccumulatedProblems,
     usedTherapies: [],
+    oncologistStartStage: mode === 'oncologist' ? oncologistStartStage : undefined,
     rng: createSeededRng(randomSeed + 101),
   });
 
@@ -511,7 +526,8 @@ export function createInitialSimulation(
     currentRound: 1,
     maxRounds,
     unlimitedMode,
-    oncologistLiberation: 16,
+    oncologistStartStage: mode === 'oncologist' ? oncologistStartStage : undefined,
+    oncologistLiberation: initialLiberation,
     finished: false,
     clones,
     defenses,
@@ -534,7 +550,7 @@ export function createInitialSimulation(
       accuracyScore: 0,
     },
     usedTherapies: [],
-    accumulatedProblems: [],
+    accumulatedProblems: initialAccumulatedProblems,
     roundOffers: { 1: round1Offer },
     randomSeed,
     history: [],
@@ -2165,6 +2181,7 @@ export function buildCompletedRunSummary(
     destinationReached: dest.isReached,
     roundsPlayed: state.history.length,
     unlimitedMode: state.unlimitedMode,
+    oncologistStartStage: state.oncologistStartStage,
     playMode: meta?.playMode,
     molecularDetail: meta?.molecularDetail,
     score: { ...state.score },

@@ -42,6 +42,7 @@ import {
   TherapyId,
   TumorClone,
 } from '../engine/types';
+import { ThemeMode } from '../utils/storage';
 import { Labyrinth3DView } from './Labyrinth3DView';
 
 interface GeneNodeData extends Record<string, unknown> {
@@ -66,42 +67,42 @@ const STATE_META: Record<
   functional: {
     label: 'Funcional',
     symbol: '●',
-    border: 'border-slate-300',
-    bg: 'bg-white',
-    text: 'text-slate-900',
-    accentText: 'text-emerald-700',
+    border: 'border-slate-300 dark:border-slate-700',
+    bg: 'bg-white dark:bg-slate-900',
+    text: 'text-slate-900 dark:text-slate-100',
+    accentText: 'text-emerald-700 dark:text-emerald-400',
   },
   activated: {
     label: 'Activado',
     symbol: '▲',
-    border: 'border-rose-400',
-    bg: 'bg-rose-50/70',
-    text: 'text-slate-900',
-    accentText: 'text-rose-700',
+    border: 'border-rose-400 dark:border-rose-500/80',
+    bg: 'bg-rose-50/70 dark:bg-rose-950/60',
+    text: 'text-slate-900 dark:text-white',
+    accentText: 'text-rose-700 dark:text-rose-400',
   },
   reduced: {
     label: 'Reducido',
     symbol: '▼',
-    border: 'border-amber-400',
-    bg: 'bg-amber-50/70',
-    text: 'text-slate-900',
-    accentText: 'text-amber-700',
+    border: 'border-amber-400 dark:border-amber-500/80',
+    bg: 'bg-amber-50/70 dark:bg-amber-950/60',
+    text: 'text-slate-900 dark:text-white',
+    accentText: 'text-amber-700 dark:text-amber-400',
   },
   inactivated: {
     label: 'Inactivado',
     symbol: '✕',
-    border: 'border-slate-400 border-dashed',
-    bg: 'bg-slate-100',
-    text: 'text-slate-700',
-    accentText: 'text-slate-600',
+    border: 'border-slate-400 dark:border-slate-600 border-dashed',
+    bg: 'bg-slate-100 dark:bg-slate-800/80',
+    text: 'text-slate-700 dark:text-slate-200',
+    accentText: 'text-slate-600 dark:text-slate-400',
   },
   unknown: {
     label: 'Sin dato',
     symbol: '?',
-    border: 'border-slate-200 border-dashed',
-    bg: 'bg-slate-50',
-    text: 'text-slate-400',
-    accentText: 'text-slate-400',
+    border: 'border-slate-200 dark:border-slate-800 border-dashed',
+    bg: 'bg-slate-50 dark:bg-slate-900/60',
+    text: 'text-slate-400 dark:text-slate-500',
+    accentText: 'text-slate-400 dark:text-slate-500',
   },
 };
 
@@ -111,6 +112,14 @@ const COMPARTMENT_SHORT: Record<GeneDefinition['compartment'], string> = {
   cycle_nucleus: 'Ciclo / Núcleo',
   damage_apoptosis: 'Daño / Apoptosis',
   microenvironment: 'Microambiente',
+};
+
+const COMPARTMENT_SIMPLE: Record<GeneDefinition['compartment'], string> = {
+  membrane: 'Superficie',
+  cytoplasm: 'Mensajes internos',
+  cycle_nucleus: 'Centro de control',
+  damage_apoptosis: 'Alarma y freno',
+  microenvironment: 'Entorno vecino',
 };
 
 const GeneNodeComponent: React.FC<NodeProps<Node<GeneNodeData>>> = ({ data }) => {
@@ -125,12 +134,16 @@ const GeneNodeComponent: React.FC<NodeProps<Node<GeneNodeData>>> = ({ data }) =>
       aria-label={`${molecularDetail === 'precision' ? `Gen ${gene.symbol}` : nodeLabel}, estado ${meta.label}`}
       className={`w-[162px] text-left rounded-lg border px-2.5 py-2 transition-all duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-sky-500 ${
         meta.border
-      } ${meta.bg} ${isHighlighted ? 'ring-2 ring-sky-500' : 'hover:border-slate-400'}`}
+      } ${meta.bg} ${
+        isHighlighted
+          ? 'ring-2 ring-sky-500'
+          : 'hover:border-slate-400 dark:hover:border-slate-500'
+      }`}
     >
       <Handle
         type="target"
         position={Position.Top}
-        className="!w-1.5 !h-1.5 !bg-slate-400 !border-none"
+        className="!w-1.5 !h-1.5 !bg-slate-400 dark:!bg-slate-500 !border-none"
       />
       <div className="flex items-center justify-between gap-1">
         <span
@@ -145,13 +158,15 @@ const GeneNodeComponent: React.FC<NodeProps<Node<GeneNodeData>>> = ({ data }) =>
           {meta.symbol} {meta.label}
         </span>
       </div>
-      <div className="mt-1 text-[10px] text-slate-500 truncate">
-        {COMPARTMENT_SHORT[gene.compartment]}
+      <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 truncate">
+        {molecularDetail === 'simple'
+          ? COMPARTMENT_SIMPLE[gene.compartment]
+          : COMPARTMENT_SHORT[gene.compartment]}
       </div>
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!w-1.5 !h-1.5 !bg-slate-400 !border-none"
+        className="!w-1.5 !h-1.5 !bg-slate-400 dark:!bg-slate-500 !border-none"
       />
     </button>
   );
@@ -165,6 +180,7 @@ interface MolecularCanvasProps {
   state: SimulationState;
   playMode: PlayMode;
   molecularDetail: MolecularDetailMode;
+  themeMode?: ThemeMode;
   stageTab: StageViewTab;
   onStageTabChange: (tab: StageViewTab) => void;
   isLabyrinthExpanded: boolean;
@@ -186,6 +202,7 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
   state,
   playMode,
   molecularDetail,
+  themeMode = 'light',
   stageTab,
   onStageTabChange,
   isLabyrinthExpanded,
@@ -204,6 +221,7 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
 }) => {
   const [selectedGeneSymbol, setSelectedGeneSymbol] = useState<string | null>(null);
   const fmt = (text: string) => formatBiologyText(text, molecularDetail);
+  const isDark = themeMode === 'dark';
   const effectiveStageTab: StageViewTab =
     playMode === 'text' && stageTab === 'labyrinth' ? 'network' : stageTab;
 
@@ -247,14 +265,20 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
       const isInhibition = e.relation === 'inhibition';
 
       const strokeColor = !sourceKnown
-        ? '#cbd5e1'
+        ? isDark
+          ? '#334155'
+          : '#cbd5e1'
         : isActiveDrive
-          ? '#e11d48'
+          ? '#f43f5e'
           : isBrokenInhibition
-            ? '#94a3b8'
+            ? '#64748b'
             : isInhibition
-              ? '#0284c7'
-              : '#64748b';
+              ? isDark
+                ? '#38bdf8'
+                : '#0284c7'
+              : isDark
+                ? '#94a3b8'
+                : '#64748b';
 
       return {
         id: e.id,
@@ -280,12 +304,12 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
           fontWeight: 700,
         },
         labelBgStyle: {
-          fill: '#f8fafc',
+          fill: isDark ? '#0f172a' : '#f8fafc',
           fillOpacity: 0.92,
         },
       };
     });
-  }, [visibleGenes, mode, revealedGenes, dominantStates]);
+  }, [visibleGenes, mode, revealedGenes, dominantStates, isDark]);
 
   const selectedGene = useMemo(
     () => visibleGenes.find((g) => g.symbol === selectedGeneSymbol) ?? null,
@@ -301,10 +325,14 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
   }, [selectedGene, customEvidence]);
 
   return (
-    <div className="flex flex-col h-full bg-white border border-slate-200 rounded-xl overflow-hidden">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
       {/* Compact Stage Header */}
-      <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/70 shrink-0">
-        <div role="tablist" aria-label="Vista de simulación" className="flex items-center gap-1 p-0.5 bg-slate-200/70 rounded-lg">
+      <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-950/60 shrink-0">
+        <div
+          role="tablist"
+          aria-label="Vista de simulación"
+          className="flex items-center gap-1 p-0.5 bg-slate-200/70 dark:bg-slate-800 rounded-lg"
+        >
           {playMode === 'labyrinth' && (
             <button
               type="button"
@@ -313,8 +341,8 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
               onClick={() => onStageTabChange('labyrinth')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 effectiveStageTab === 'labyrinth'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Box className="w-3.5 h-3.5" aria-hidden="true" />
@@ -328,12 +356,16 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
             onClick={() => onStageTabChange('network')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               effectiveStageTab === 'network'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <GitBranch className="w-3.5 h-3.5" aria-hidden="true" />
-            {molecularDetail === 'precision' ? 'Red molecular' : 'Red de procesos'}
+            {molecularDetail === 'precision'
+              ? 'Red molecular'
+              : molecularDetail === 'simple'
+                ? 'Mapa de la célula'
+                : 'Red de procesos'}
           </button>
           <button
             type="button"
@@ -342,36 +374,42 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
             onClick={() => onStageTabChange('clones')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               effectiveStageTab === 'clones'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Layers className="w-3.5 h-3.5" aria-hidden="true" />
-            Población clonal
+            {molecularDetail === 'simple' ? 'Grupos de células' : 'Población clonal'}
           </button>
         </div>
 
         {/* Concise inline legend */}
-        <div className="hidden xl:flex items-center gap-3 text-[11px] text-slate-500 whitespace-nowrap">
+        <div className="hidden xl:flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {effectiveStageTab === 'labyrinth' ? (
             <>
-              <span className="text-slate-700 font-medium">Senderos que se bifurcan</span>
+              <span className="text-slate-700 dark:text-slate-200 font-medium">
+                Senderos que se bifurcan
+              </span>
               {activeTherapyName && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="text-slate-800 font-medium">Terapia: {activeTherapyName}</span>
+                  <span className="text-slate-800 dark:text-slate-200 font-medium">
+                    Terapia: {activeTherapyName}
+                  </span>
                 </>
               )}
             </>
           ) : (
             <>
-              <span className="text-rose-600 font-medium">→ Activación</span>
+              <span className="text-rose-600 dark:text-rose-400 font-medium">→ Activación</span>
               <span aria-hidden="true">·</span>
-              <span className="text-sky-700 font-medium">⊣ Inhibición</span>
+              <span className="text-sky-700 dark:text-sky-400 font-medium">⊣ Inhibición</span>
               {activeTherapyName && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="text-slate-800 font-medium">Terapia: {activeTherapyName}</span>
+                  <span className="text-slate-800 dark:text-slate-200 font-medium">
+                    Terapia: {activeTherapyName}
+                  </span>
                 </>
               )}
             </>
@@ -380,7 +418,10 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
       </div>
 
       {/* Interactive Stage Body */}
-      <div className="relative flex-1 w-full h-[520px] lg:h-full min-h-[460px]" data-testid="simulation-canvas">
+      <div
+        className="relative flex-1 w-full h-[520px] lg:h-full min-h-[460px] bg-white dark:bg-[#0d1626]"
+        data-testid="simulation-canvas"
+      >
         {effectiveStageTab === 'labyrinth' ? (
           <Labyrinth3DView
             state={state}
@@ -407,17 +448,19 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                 minZoom={0.55}
                 maxZoom={1.35}
               >
-                <Background gap={20} size={1} color="#e2e8f0" />
+                <Background gap={20} size={1} color={isDark ? '#1e293b' : '#e2e8f0'} />
                 <Controls showInteractive={false} />
               </ReactFlow>
             </div>
 
             {/* Compact hint for fog-of-war in Oncologist mode */}
             {mode === 'oncologist' && revealedGenes.length === 0 && (
-              <div className="absolute top-3 left-3 bg-white/95 border border-slate-200 rounded-lg px-3 py-2 flex items-center gap-2 shadow-xs">
-                <EyeOff className="w-3.5 h-3.5 text-sky-600 shrink-0" aria-hidden="true" />
-                <p className="text-xs text-slate-600">
-                  Usa una prueba diagnóstica para revelar la red.
+              <div className="absolute top-3 left-3 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 flex items-center gap-2 shadow-xs">
+                <EyeOff className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" aria-hidden="true" />
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  {molecularDetail === 'simple'
+                    ? 'Haz un estudio primero para ver qué piezas están fallando dentro de la célula.'
+                    : 'Usa una prueba diagnóstica para revelar la red.'}
                 </p>
               </div>
             )}
@@ -427,15 +470,15 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
               <div
                 role="region"
                 aria-label={`Detalle de ${getGeneDisplayTitle(selectedGene, molecularDetail)}`}
-                className="absolute bottom-3 left-3 right-3 bg-white/98 border border-slate-300 rounded-xl p-4 shadow-sm max-h-60 overflow-y-auto"
+                className="absolute bottom-3 left-3 right-3 bg-white/98 dark:bg-slate-900/98 border border-slate-300 dark:border-slate-700 rounded-xl p-4 shadow-sm max-h-60 overflow-y-auto"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span
                         className={`${
                           molecularDetail === 'precision' ? 'font-mono' : ''
-                        } text-sm font-bold text-slate-900`}
+                        } text-sm font-bold text-slate-900 dark:text-white`}
                       >
                         {getGeneDisplayTitle(selectedGene, molecularDetail)}
                       </span>
@@ -453,14 +496,14 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                     type="button"
                     onClick={() => setSelectedGeneSymbol(null)}
                     aria-label="Cerrar detalle"
-                    className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
+                    className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
                 {!selectedGeneKnown ? (
-                  <div className="mt-2.5 flex items-center gap-2 text-xs text-slate-600">
+                  <div className="mt-2.5 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
                     <HelpCircle className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
                     <span>
                       Estado aún desconocido en este paciente. Realiza el estudio diagnóstico
@@ -469,13 +512,15 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                     </span>
                   </div>
                 ) : (
-                  <div className="mt-2.5 space-y-2 text-xs text-slate-700">
+                  <div className="mt-2.5 space-y-2 text-xs text-slate-700 dark:text-slate-300">
                     <p>
-                      <strong className="text-slate-900">Función normal:</strong>{' '}
+                      <strong className="text-slate-900 dark:text-white">Función normal:</strong>{' '}
                       {fmt(selectedGene.normalFunction)}
                     </p>
                     <p>
-                      <strong className="text-slate-900">Consecuencia funcional:</strong>{' '}
+                      <strong className="text-slate-900 dark:text-white">
+                        Consecuencia funcional:
+                      </strong>{' '}
                       {fmt(selectedGene.alteredConsequence)}
                     </p>
                     {molecularDetail === 'precision' &&
@@ -483,9 +528,9 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                         (ev, idx) => (
                           <div
                             key={`${ev.cosmicGeneId}-${idx}`}
-                            className="pt-2 border-t border-slate-100 text-[11px] text-slate-600 space-y-0.5"
+                            className="pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 space-y-0.5"
                           >
-                            <div className="font-mono text-slate-500">
+                            <div className="font-mono text-slate-500 dark:text-slate-400">
                               COSMIC {ev.cosmicGeneId} · PMID {ev.pubmedPmid} · {ev.hallmarkLabel} (
                               {ev.impact}) · {ev.cellLine}
                             </div>
@@ -504,26 +549,40 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
             {mode === 'oncologist' && !revealedClonalHeterogeneity ? (
               <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto py-12 gap-3">
                 <EyeOff className="w-7 h-7 text-slate-400" aria-hidden="true" />
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Heterogeneidad clonal aún no caracterizada
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {molecularDetail === 'simple'
+                    ? 'Todavía no conocemos los grupos de células'
+                    : 'Heterogeneidad clonal aún no caracterizada'}
                 </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Solicita el{' '}
-                  <strong className="text-slate-900">
-                    {molecularDetail === 'precision' ? 'Perfil NGS' : 'Análisis funcional'}
-                  </strong>{' '}
-                  o el <strong className="text-slate-900">Seguimiento molecular</strong> para
-                  detectar subclones minoritarios y resistencias.
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {molecularDetail === 'simple' ? (
+                    <>
+                      Pide el <strong className="text-slate-900 dark:text-white">Mapa interno del tumor</strong>{' '}
+                      o el <strong className="text-slate-900 dark:text-white">Análisis de sangre</strong>{' '}
+                      para ver si ya existen grupos resistentes escondidos.
+                    </>
+                  ) : (
+                    <>
+                      Solicita el{' '}
+                      <strong className="text-slate-900 dark:text-white">
+                        {molecularDetail === 'precision' ? 'Perfil NGS' : 'Análisis funcional'}
+                      </strong>{' '}
+                      o el <strong className="text-slate-900 dark:text-white">Seguimiento molecular</strong>{' '}
+                      para detectar subclones minoritarios y resistencias.
+                    </>
+                  )}
                 </p>
               </div>
             ) : (
               <>
                 {/* Visual proportion bar */}
                 <div>
-                  <div className="text-xs font-semibold text-slate-900 mb-2">
-                    Composición clonal
+                  <div className="text-xs font-semibold text-slate-900 dark:text-white mb-2">
+                    {molecularDetail === 'simple'
+                      ? 'Reparto de grupos de células'
+                      : 'Composición clonal'}
                   </div>
-                  <div className="w-full h-7 rounded-lg overflow-hidden flex border border-slate-200 bg-slate-100">
+                  <div className="w-full h-7 rounded-lg overflow-hidden flex border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                     {clones.map((clone, idx) => {
                       const colors = ['bg-rose-500', 'bg-amber-500', 'bg-sky-600'];
                       return (
@@ -543,24 +602,34 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                 {/* Detailed Clone Cards */}
                 <div className="grid grid-cols-1 gap-3.5">
                   {clones.map((clone, idx) => {
-                    const accentColors = ['text-rose-700', 'text-amber-700', 'text-sky-700'];
+                    const accentColors = [
+                      'text-rose-700 dark:text-rose-400',
+                      'text-amber-700 dark:text-amber-400',
+                      'text-sky-700 dark:text-sky-400',
+                    ];
                     const originLabel =
-                      clone.origin === 'founder'
-                        ? 'Clon fundador'
-                        : clone.origin === 'preexisting'
-                          ? 'Subclon preexistente'
-                          : 'Variante emergente';
+                      molecularDetail === 'simple'
+                        ? clone.origin === 'founder'
+                          ? 'Grupo inicial'
+                          : clone.origin === 'preexisting'
+                            ? 'Grupo escondido desde el inicio'
+                            : 'Grupo nuevo'
+                        : clone.origin === 'founder'
+                          ? 'Clon fundador'
+                          : clone.origin === 'preexisting'
+                            ? 'Subclon preexistente'
+                            : 'Variante emergente';
                     return (
                       <div
                         key={clone.id}
-                        className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-2.5"
+                        className="border border-slate-200 dark:border-slate-800 rounded-lg p-4 bg-slate-50/50 dark:bg-slate-900/70 space-y-2.5"
                       >
                         <div className="flex items-baseline justify-between gap-2">
                           <div>
-                            <h4 className="text-sm font-semibold text-slate-900">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
                               {fmt(clone.name)}
                             </h4>
-                            <div className="text-xs text-slate-500 mt-0.5">
+                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                               <span>{originLabel}</span>
                               <span aria-hidden="true"> · </span>
                               <span
@@ -579,45 +648,47 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                           </span>
                         </div>
 
-                        <p className="text-xs text-slate-600 leading-relaxed">
+                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                           {fmt(clone.description)}
                         </p>
 
                         {/* Compact metrics grid */}
-                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/70 text-[11px]">
-                          <div className="flex items-center gap-1.5 text-slate-700">
-                            <TrendingUp className="w-3.5 h-3.5 text-rose-600 shrink-0" aria-hidden="true" />
+                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-800 text-[11px]">
+                          <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                            <TrendingUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" aria-hidden="true" />
                             <span>
-                              Proliferación{' '}
-                              <strong className="font-mono tabular-nums">
+                              {molecularDetail === 'simple' ? 'Crecimiento' : 'Proliferación'}{' '}
+                              <strong className="font-mono tabular-nums text-slate-900 dark:text-white">
                                 {clone.proliferationRate}
                               </strong>
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-slate-700">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
+                          <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" aria-hidden="true" />
                             <span>
-                              Sens. apoptosis{' '}
-                              <strong className="font-mono tabular-nums">
+                              {molecularDetail === 'simple' ? 'Fácil de frenar' : 'Sens. apoptosis'}{' '}
+                              <strong className="font-mono tabular-nums text-slate-900 dark:text-white">
                                 {clone.apoptosisSensitivity}
                               </strong>
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-slate-700">
-                            <MinusCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" aria-hidden="true" />
+                          <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                            <MinusCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" aria-hidden="true" />
                             <span>
-                              Costo metab.{' '}
-                              <strong className="font-mono tabular-nums">
+                              {molecularDetail === 'simple' ? 'Gasto energía' : 'Costo metab.'}{' '}
+                              <strong className="font-mono tabular-nums text-slate-900 dark:text-white">
                                 {clone.metabolicCost}
                               </strong>
                             </span>
                           </div>
                         </div>
 
-                        <div className="text-[11px] text-slate-600 flex items-start gap-1.5 pt-1">
-                          <AlertCircle className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" aria-hidden="true" />
+                        <div className="text-[11px] text-slate-600 dark:text-slate-300 flex items-start gap-1.5 pt-1">
+                          <AlertCircle className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" aria-hidden="true" />
                           <span>
-                            <strong className="text-slate-800">Vulnerabilidades:</strong>{' '}
+                            <strong className="text-slate-800 dark:text-slate-100">
+                              {molecularDetail === 'simple' ? 'Puntos débiles:' : 'Vulnerabilidades:'}
+                            </strong>{' '}
                             {clone.vulnerabilities.map((v) => fmt(v)).join(' · ')}
                           </span>
                         </div>

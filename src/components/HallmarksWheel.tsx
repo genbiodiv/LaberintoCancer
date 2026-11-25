@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { ENABLING_CHARACTERISTICS, HALLMARKS_CATALOG } from '../engine/knowledgeBase';
-import { formatBiologyText } from '../engine/molecularAbstraction';
+import {
+  getEnablingDisplayName,
+  getHallmarkDisplayInfo,
+} from '../engine/molecularAbstraction';
 import { EnablingCharacteristicId, HallmarkId, MolecularDetailMode } from '../engine/types';
 
 interface HallmarksWheelProps {
@@ -68,6 +71,9 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
   const selectedDef =
     HALLMARKS_CATALOG.find((h) => h.id === selectedId) ?? HALLMARKS_CATALOG[0];
 
+  const selectedDisplay = getHallmarkDisplayInfo(selectedDef, molecularDetail);
+  const isSimple = molecularDetail === 'simple';
+
   const cx = 135;
   const cy = 135;
   const rMin = 28;
@@ -76,8 +82,8 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
 
   return (
     <div className="space-y-3">
-      <h3 className="text-xs font-semibold text-slate-900">
-        Hallmarks (Hanahan, 2026)
+      <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
+        {isSimple ? 'Habilidades del cáncer' : 'Hallmarks (Hanahan, 2026)'}
       </h3>
 
       {/* Circular Interactive SVG Diagram */}
@@ -96,7 +102,7 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
               cy={cy}
               r={rMin + (rMax - rMin) * ratio}
               fill="none"
-              stroke="#e2e8f0"
+              className="stroke-slate-200 dark:stroke-slate-700"
               strokeWidth={1}
               strokeDasharray={ratio < 1 ? '2 3' : undefined}
             />
@@ -131,15 +137,18 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
                 {/* Background wedge hit area */}
                 <path
                   d={describeSector(cx, cy, rMin, rMax, start, end)}
-                  fill={isSelected ? '#f1f5f9' : 'transparent'}
-                  stroke={isSelected ? '#94a3b8' : '#e2e8f0'}
+                  className={
+                    isSelected
+                      ? 'fill-slate-100 dark:fill-slate-800 stroke-slate-400 dark:stroke-slate-500'
+                      : 'fill-transparent stroke-slate-200 dark:stroke-slate-800'
+                  }
                   strokeWidth={isSelected ? 1.2 : 0.6}
                 />
                 {/* Active capability wedge */}
                 <path
                   d={describeSector(cx, cy, rMin, rValue, start, end)}
                   fill={fillColor}
-                  fillOpacity={isSelected ? 0.85 : isTier1 ? 0.62 : 0.36}
+                  fillOpacity={isSelected ? 0.88 : isTier1 ? 0.65 : 0.42}
                   stroke={fillColor}
                   strokeWidth={isSelected ? 1.5 : 0.8}
                 />
@@ -149,7 +158,9 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
                   y={labelPos.y + 3}
                   textAnchor="middle"
                   className={`text-[9px] font-mono ${
-                    isSelected ? 'fill-slate-900 font-bold' : 'fill-slate-500'
+                    isSelected
+                      ? 'fill-slate-900 dark:fill-white font-bold'
+                      : 'fill-slate-500 dark:fill-slate-400'
                   }`}
                 >
                   {i + 1}
@@ -159,12 +170,17 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
           })}
 
           {/* Center score label */}
-          <circle cx={cx} cy={cy} r={rMin - 2} fill="#ffffff" stroke="#e2e8f0" />
+          <circle
+            cx={cx}
+            cy={cy}
+            r={rMin - 2}
+            className="fill-white dark:fill-slate-900 stroke-slate-200 dark:stroke-slate-700"
+          />
           <text
             x={cx}
             y={cy - 1}
             textAnchor="middle"
-            className="text-[12px] font-mono font-bold fill-slate-900 tabular-nums"
+            className="text-[12px] font-mono font-bold fill-slate-900 dark:fill-white tabular-nums"
           >
             {hallmarkScores[selectedDef.id]}
           </text>
@@ -172,7 +188,7 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
             x={cx}
             y={cy + 11}
             textAnchor="middle"
-            className="text-[8px] fill-slate-500"
+            className="text-[8px] fill-slate-500 dark:fill-slate-400"
           >
             /100
           </text>
@@ -182,6 +198,7 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
         <div className="w-full mt-1 grid grid-cols-3 gap-1">
           {HALLMARKS_CATALOG.map((h, i) => {
             const active = selectedId === h.id;
+            const info = getHallmarkDisplayInfo(h, molecularDetail);
             return (
               <button
                 key={h.id}
@@ -189,13 +206,13 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
                 onClick={() => setSelectedId(h.id)}
                 className={`px-1.5 py-1 text-[10px] rounded text-left truncate transition-colors cursor-pointer ${
                   active
-                    ? 'bg-slate-900 text-white font-semibold'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-slate-900 dark:bg-sky-600 text-white font-semibold'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
-                title={`${i + 1}. ${h.name} (${hallmarkScores[h.id]}/100)`}
+                title={`${i + 1}. ${info.name} (${hallmarkScores[h.id]}/100)`}
               >
                 <span className="font-mono mr-1">{i + 1}.</span>
-                {h.shortLabel}
+                {info.shortLabel}
               </button>
             );
           })}
@@ -203,22 +220,24 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
       </div>
 
       {/* Selected Hallmark Explanation */}
-      <div className="pt-2.5 border-t border-slate-100 space-y-1">
+      <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1">
         <div className="flex items-baseline justify-between gap-2 text-xs">
-          <span className="font-semibold text-slate-900">{selectedDef.name}</span>
-          <span className="font-mono text-slate-600 tabular-nums shrink-0">
+          <span className="font-semibold text-slate-900 dark:text-white">
+            {selectedDisplay.name}
+          </span>
+          <span className="font-mono text-slate-600 dark:text-slate-300 tabular-nums shrink-0">
             {hallmarkScores[selectedDef.id]}/100
           </span>
         </div>
-        <p className="text-[11px] text-slate-600 leading-snug">
-          {formatBiologyText(selectedDef.description, molecularDetail)}
+        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+          {selectedDisplay.description}
         </p>
       </div>
 
       {/* Explicit Separation: Enabling Characteristics & Microenvironment */}
-      <div className="pt-2.5 border-t border-slate-200 space-y-2">
-        <div className="text-[11px] font-semibold text-slate-700">
-          Facilitadores y microambiente
+      <div className="pt-2.5 border-t border-slate-200 dark:border-slate-800 space-y-2">
+        <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+          {isSimple ? 'Factores del entorno que ayudan al tumor' : 'Facilitadores y microambiente'}
         </div>
         <div className="space-y-1.5">
           {ENABLING_CHARACTERISTICS.map((item) => {
@@ -226,12 +245,16 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
             return (
               <div key={item.id} className="space-y-0.5">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-600 truncate pr-2">{item.name}</span>
-                  <span className="font-mono text-slate-700 tabular-nums">{val}</span>
+                  <span className="text-slate-600 dark:text-slate-300 truncate pr-2">
+                    {getEnablingDisplayName(item, molecularDetail)}
+                  </span>
+                  <span className="font-mono text-slate-700 dark:text-slate-200 tabular-nums">
+                    {val}
+                  </span>
                 </div>
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-slate-500 rounded-full transition-all duration-300"
+                    className="h-full bg-slate-500 dark:bg-slate-400 rounded-full transition-all duration-300"
                     style={{ width: `${val}%` }}
                   />
                 </div>

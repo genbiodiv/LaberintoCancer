@@ -6,6 +6,7 @@ import {
   GeneState,
   HallmarkId,
   OncologistRoundPhase,
+  OncologistStartStage,
   OrganismDefenses,
   PredictionOption,
   RoundDefinition,
@@ -183,6 +184,229 @@ export function createUnifiedInitialClinical(): ClinicalState {
     cumulativeToxicity: 0,
     qualityOfLife: 92,
     diseaseControl: 'estable',
+  };
+}
+
+export interface OncologistStageBaseline {
+  stage: OncologistStartStage;
+  clones: TumorClone[];
+  defenses: OrganismDefenses;
+  clinical: ClinicalState;
+  accumulatedProblems: AccumulatedProblem[];
+  initialLiberation: number;
+}
+
+/**
+ * Generates the biologically authentic initial state for each Oncologist Mode starting stage:
+ * - 'surveillance': Minimal low-risk finding (8% burden, intact controls, ideal for careful monitoring)
+ * - 'early': Exact unified early localized lesion (16% burden, intact suppressors)
+ * - 'advanced': Disseminated multi-clonal tumor (68% burden, 3 preexisting alterations, weakened defenses)
+ */
+export function createOncologistStageBaseline(
+  stage: OncologistStartStage = 'early'
+): OncologistStageBaseline {
+  if (stage === 'early') {
+    return {
+      stage: 'early',
+      clones: createUnifiedInitialClones(),
+      defenses: createUnifiedInitialDefenses(),
+      clinical: createUnifiedInitialClinical(),
+      accumulatedProblems: [],
+      initialLiberation: 16,
+    };
+  }
+
+  if (stage === 'surveillance') {
+    return {
+      stage: 'surveillance',
+      clones: [
+        {
+          id: 'clone-founder',
+          name: 'Población mínima de crecimiento lento',
+          shortTag: 'Lesión basal',
+          origin: 'founder',
+          genotype: createBaselineGenotype({ EGFR: 'functional' }),
+          share: 90,
+          proliferationRate: 36,
+          apoptosisSensitivity: 88,
+          growthFactorDependence: 90,
+          metabolicCost: 22,
+          immuneVisibility: 82,
+          vulnerabilities: [
+            'Dependencia casi total de señales normales del tejido',
+            'Controles TP53, RB1, PTEN y apoptosis completamente intactos',
+          ],
+          resistanceSummary: 'Sin mecanismos de evasión; crecimiento muy lento bajo vigilancia.',
+          description:
+            'Pequeño foco celular de bajo riesgo con frenos naturales intactos y alta visibilidad inmune.',
+        },
+        {
+          id: 'clone-sub-a',
+          name: 'Subpoblación de reserva metabólica tranquila',
+          shortTag: 'Variante A',
+          origin: 'preexisting',
+          genotype: createBaselineGenotype(),
+          share: 6,
+          proliferationRate: 32,
+          apoptosisSensitivity: 82,
+          growthFactorDependence: 80,
+          metabolicCost: 26,
+          immuneVisibility: 76,
+          vulnerabilities: ['Puntos de control y apoptosis funcionales'],
+          resistanceSummary: 'Baja actividad inicial; sin ventaja evolutiva activa.',
+          description: 'Pequeña fracción celular en reposo relativo dentro del tejido sano.',
+        },
+        {
+          id: 'clone-sub-b',
+          name: 'Subpoblación minoritaria en latencia',
+          shortTag: 'Variante B',
+          origin: 'emergent',
+          genotype: createBaselineGenotype(),
+          share: 4,
+          proliferationRate: 28,
+          apoptosisSensitivity: 78,
+          growthFactorDependence: 78,
+          metabolicCost: 25,
+          immuneVisibility: 72,
+          vulnerabilities: ['Baja tasa inicial de división; controlada por defensas basales'],
+          resistanceSummary: 'Sin alteraciones acumuladas al inicio.',
+          description: 'Grupo mínimo contenido por las defensas normales del organismo.',
+        },
+      ],
+      defenses: {
+        cellCycleCheckpoint: 90,
+        dnaRepair: 90,
+        senescence: 88,
+        apoptosisCapacity: 88,
+        immuneSurveillance: 86,
+        nutrientSupply: 84,
+      },
+      clinical: {
+        tumorBurden: 8,
+        diseaseExtent: 'localizada',
+        functionalStatus: 97,
+        cumulativeToxicity: 0,
+        qualityOfLife: 96,
+        diseaseControl: 'control_sostenido',
+      },
+      accumulatedProblems: [],
+      initialLiberation: 36,
+    };
+  }
+
+  // 'advanced': Cáncer avanzado (enfermedad diseminada con clones heterogéneos)
+  const presetProblemIds = ['prob-pik3ca', 'prob-tp53', 'prob-pdl1'];
+  const accumulatedProblems: AccumulatedProblem[] = presetProblemIds
+    .map((id) => PROBLEM_CATALOG.find((p) => p.id === id))
+    .filter((p): p is ProgressiveProblemSpec => Boolean(p))
+    .map((spec) => ({
+      id: spec.id,
+      roundNumber: 0,
+      geneSymbol: spec.geneSymbol,
+      geneState: spec.geneState,
+      logicLabel: spec.logicLabel,
+      precisionLabel: spec.precisionLabel,
+      shortDoorLogic: spec.shortDoorLogic,
+      shortDoorPrecision: spec.shortDoorPrecision,
+      summary: spec.summary,
+      hallmarkId: spec.hallmarkId,
+    }));
+
+  return {
+    stage: 'advanced',
+    clones: [
+      {
+        id: 'clone-founder',
+        name: 'Población dominante con supervivencia acelerada',
+        shortTag: 'PIK3CA↑ TP53✕',
+        origin: 'founder',
+        genotype: createBaselineGenotype({
+          EGFR: 'activated',
+          PIK3CA: 'activated',
+          TP53: 'inactivated',
+        }),
+        share: 52,
+        proliferationRate: 76,
+        apoptosisSensitivity: 42,
+        growthFactorDependence: 46,
+        metabolicCost: 48,
+        immuneVisibility: 56,
+        vulnerabilities: [
+          'Dependencia fuerte de la cascada PI3K/AKT de supervivencia',
+          'Conserva freno RB1 parcial frente a bloqueo del ciclo',
+        ],
+        resistanceSummary:
+          'Pérdida de TP53 atenúa la apoptosis frente a quimioterapia convencional.',
+        description:
+          'Población mayoritaria con alta proliferación, metabolismo acelerado y menor respuesta al daño al ADN.',
+      },
+      {
+        id: 'clone-sub-a',
+        name: 'Subpoblación invasiva con soporte vascular',
+        shortTag: 'KRAS↑ VEGFA↑',
+        origin: 'preexisting',
+        genotype: createBaselineGenotype({
+          KRAS: 'activated',
+          PTEN: 'inactivated',
+          VEGFA: 'activated',
+        }),
+        share: 28,
+        proliferationRate: 72,
+        apoptosisSensitivity: 48,
+        growthFactorDependence: 34,
+        metabolicCost: 50,
+        immuneVisibility: 52,
+        vulnerabilities: [
+          'Dependencia metabólica explotable mediante bloqueo de supervivencia',
+          'Visible frente a reactivación inmune',
+        ],
+        resistanceSummary: 'KRAS activado confiere resistencia intrínseca a Anti-EGFR.',
+        description:
+          'Subpoblación autónoma capaz de estimular nuevos vasos sanguíneos y sostener su crecimiento.',
+      },
+      {
+        id: 'clone-sub-b',
+        name: 'Subpoblación resistente con evasión inmune',
+        shortTag: 'PDL1↑ MET↑',
+        origin: 'emergent',
+        genotype: createBaselineGenotype({
+          MET: 'activated',
+          PDL1: 'activated',
+          BCL2: 'activated',
+        }),
+        share: 20,
+        proliferationRate: 64,
+        apoptosisSensitivity: 38,
+        growthFactorDependence: 40,
+        metabolicCost: 44,
+        immuneVisibility: 36,
+        vulnerabilities: [
+          'Evasión inmune PD-L1 reversible mediante inmunoterapia',
+        ],
+        resistanceSummary:
+          'Combina escape paralelo MET, escudo anti-apoptótico BCL2 y freno PD-L1 sobre linfocitos T.',
+        description:
+          'Grupo minoritario adaptado a evadir defensas y sobrevivir en sitios metastásicos.',
+      },
+    ],
+    defenses: {
+      cellCycleCheckpoint: 46,
+      dnaRepair: 48,
+      senescence: 44,
+      apoptosisCapacity: 46,
+      immuneSurveillance: 52,
+      nutrientSupply: 50,
+    },
+    clinical: {
+      tumorBurden: 68,
+      diseaseExtent: 'diseminada',
+      functionalStatus: 64,
+      cumulativeToxicity: 8,
+      qualityOfLife: 62,
+      diseaseControl: 'progresion',
+    },
+    accumulatedProblems,
+    initialLiberation: 6,
   };
 }
 
@@ -1124,6 +1348,7 @@ export function generateRoundOffer(params: {
   accumulatedProblems: AccumulatedProblem[];
   usedTherapies: TherapyId[];
   completedDiagnostics?: DiagnosticToolId[];
+  oncologistStartStage?: OncologistStartStage;
   rng: () => number;
 }): RoundOffer {
   const {
@@ -1133,6 +1358,7 @@ export function generateRoundOffer(params: {
     accumulatedProblems,
     usedTherapies,
     completedDiagnostics = [],
+    oncologistStartStage = 'early',
     rng,
   } = params;
   const acquiredIds = new Set(accumulatedProblems.map((p) => p.id));
@@ -1233,10 +1459,17 @@ export function generateRoundOffer(params: {
     rng
   );
 
+  const round1OncologistPrompt =
+    oncologistStartStage === 'surveillance'
+      ? 'Inicio en vigilancia: hay una lesión mínima de bajo riesgo y controles celulares intactos. Elige un estudio diagnóstico para vigilarla o salta en observación sin sobretratar.'
+      : oncologistStartStage === 'advanced'
+        ? 'Inicio en cáncer avanzado: el tumor ya se encuentra extendido y presenta múltiples poblaciones celulares. Elige un estudio diagnóstico para descubrir sus vulnerabilidades o salta en observación.'
+        : 'Inicio en cáncer temprano: lesión proliferativa localizada con controles celulares aún intactos. Elige un estudio diagnóstico para caracterizarla o salta en observación.';
+
   const oncologistPrompt =
     oncologistPhase === 'diagnostic'
       ? roundNumber === 1
-        ? 'Ronda de diagnóstico: elige un estudio para caracterizar la lesión celular inicial, o salta esta ronda en observación.'
+        ? round1OncologistPrompt
         : `Ronda ${roundNumber} · Diagnóstico: selecciona un estudio para explorar el estado molecular y clonal actual, o continúa en observación.`
       : `Ronda ${roundNumber} · Intervención: elige una terapia para actuar sobre los clones activos y observar sus ramificaciones celulares, o salta en observación.`;
 
@@ -1276,6 +1509,7 @@ export function getActiveRoundOffer(state: SimulationState): RoundOffer {
     accumulatedProblems: state.accumulatedProblems ?? [],
     usedTherapies: state.usedTherapies,
     completedDiagnostics: state.completedDiagnostics ?? [],
+    oncologistStartStage: state.oncologistStartStage,
     rng,
   });
 }

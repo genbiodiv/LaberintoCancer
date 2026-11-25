@@ -1,9 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  describeCurrentSituationSimple,
+  describeTurnResolutionSimple,
   formatBiologyText,
+  getDiagnosticDisplayInfo,
+  getHallmarkDisplayInfo,
   getModelFieldOptions,
+  getOncologistStageInfo,
   getScenarioDisplayInfo,
+  getTherapyDisplayInfo,
   getTherapyDisplayName,
 } from './molecularAbstraction';
 import { computeDestinationProgress } from './destinationMetrics';
@@ -25,7 +31,7 @@ import {
   stepLabyrinthZoom,
 } from './labyrinthAesthetics';
 import { buildLabyrinthLayout, getOncologistForkTherapies } from './labyrinthLayout';
-import { THERAPIES_CATALOG } from './knowledgeBase';
+import { DIAGNOSTIC_TOOLS, HALLMARKS_CATALOG, THERAPIES_CATALOG } from './knowledgeBase';
 import {
   getActiveRoundOffer,
   getOncologistRoundPhase,
@@ -708,6 +714,133 @@ test('Oncologist Mode alternates Diagnostic (odd) and Intervention (even) rounds
   assert.equal(state.oncologistLiberation, 100);
   assert.equal(state.clinical.tumorBurden, 0);
 });
+
+test('Modo Simple translates diagnostics, therapies, hallmarks, labyrinth doors, and live narration into plain Spanish without gene symbols or dense jargon', () => {
+  const DENSE_JARGON_REGEX =
+    /\b(apoptosis|angiogénesis|mitogénico|mitogénica|citotóxico|citotóxica|inmunohistoquímica|linfocitos T)\b/i;
+
+  for (const tool of DIAGNOSTIC_TOOLS) {
+    const info = getDiagnosticDisplayInfo(tool, 'simple');
+    const combined = `${info.name} ${info.summary} ${info.revealsDescription}`;
+    assert.equal(GENE_SYMBOL_REGEX.test(combined), false, `Simple diagnostic leaked gene: ${combined}`);
+    assert.equal(DENSE_JARGON_REGEX.test(combined), false, `Simple diagnostic kept jargon: ${combined}`);
+  }
+
+  for (const therapy of THERAPIES_CATALOG) {
+    const info = getTherapyDisplayInfo(therapy, 'simple');
+    const combined = `${info.name} ${info.mechanism} ${info.cloneEffectsSummary}`;
+    assert.equal(GENE_SYMBOL_REGEX.test(combined), false, `Simple therapy leaked gene: ${combined}`);
+    assert.equal(DENSE_JARGON_REGEX.test(combined), false, `Simple therapy kept jargon: ${combined}`);
+  }
+
+  for (const hallmark of HALLMARKS_CATALOG) {
+    const info = getHallmarkDisplayInfo(hallmark, 'simple');
+    const combined = `${info.name} ${info.shortLabel} ${info.description}`;
+    assert.equal(GENE_SYMBOL_REGEX.test(combined), false, `Simple hallmark leaked gene: ${combined}`);
+    assert.equal(DENSE_JARGON_REGEX.test(combined), false, `Simple hallmark kept jargon: ${combined}`);
+  }
+
+  for (const mode of ['cancer', 'oncologist'] as const) {
+    const sim = createInitialSimulation(mode, 'UNIFIED', '', 'quick', undefined, 6, 333, true, 'early');
+    const situation = describeCurrentSituationSimple(sim);
+    assert.ok(situation.length > 25, 'Simple situation description must be informative');
+    assert.equal(GENE_SYMBOL_REGEX.test(situation), false, `Simple situation leaked gene: ${situation}`);
+
+    const layout = buildLabyrinthLayout(sim, 'simple');
+    for (const portal of layout.portals) {
+      const text = `${portal.label} ${portal.sublabel} ${portal.fullTitle}`;
+      assert.equal(GENE_SYMBOL_REGEX.test(text), false, `Simple portal leaked gene: ${text}`);
+    }
+
+    const offer = getActiveRoundOffer(sim);
+    const turn =
+      mode === 'cancer'
+        ? resolveCancerTurn(
+            sim,
+            offer.cancerStrategies[0].id,
+            offer.cancerPredictions.find(
+              (p) => evaluatePredictionGate(sim, offer.cancerStrategies[0].id, p.id).allowed
+            )!.id
+          )
+        : resolveOncologistDiagnosticTurn(sim, offer.oncologistDoorDiagnostics[0]);
+
+    const simpleSummary = describeTurnResolutionSimple(turn.resolution, turn.nextState);
+    assert.ok(simpleSummary.length > 25, 'Simple resolution summary must be informative');
+    assert.equal(GENE_SYMBOL_REGEX.test(simpleSummary), false, `Simple summary leaked gene: ${simpleSummary}`);
+  }
+});
+
+test('Oncologist starting stages (surveillance, early, advanced) configure distinct clinical baselines and all reach 100% liberation', () => {
+  const surv = createInitialSimulation('oncologist', 'UNIFIED', '', 'quick', undefined, 6, 501, true, 'surveillance');
+  const early = createInitialSimulation('oncologist', 'UNIFIED', '', 'quick', undefined, 6, 501, true, 'early');
+  const adv = createInitialSimulation('oncologist', 'UNIFIED', '', 'quick', undefined, 6, 501, true, 'advanced');
+
+  // Distinct baseline tumor burdens
+  assert.equal(surv.oncologistStartStage, 'surveillance');
+  assert.equal(surv.clinical.tumorBurden, 8);
+  assert.equal(surv.clinical.diseaseExtent, 'localizada');
+  assert.equal(surv.accumulatedProblems.length, 0);
+  assert.equal(surv.oncologistLiberation, 36);
+
+  assert.equal(early.oncologistStartStage, 'early');
+  assert.equal(early.clinical.tumorBurden, 16);
+  assert.equal(early.clinical.diseaseExtent, 'localizada');
+  assert.equal(early.accumulatedProblems.length, 0);
+  assert.equal(early.oncologistLiberation, 16);
+
+  assert.equal(adv.oncologistStartStage, 'advanced');
+  assert.equal(adv.clinical.tumorBurden, 68);
+  assert.equal(adv.clinical.diseaseExtent, 'diseminada');
+  assert.equal(adv.accumulatedProblems.length, 3);
+  assert.equal(adv.oncologistLiberation, 6);
+  assert.ok(adv.clones.length >= 3, 'Advanced stage must start with heterogeneous clones');
+
+  // Stage metadata exists in all 3 detail modes
+  for (const stage of ['surveillance', 'early', 'advanced'] as const) {
+    for (const detail of ['simple', 'logic', 'precision'] as const) {
+      const info = getOncologistStageInfo(stage, detail);
+      assert.ok(info.label.length > 0 && info.description.length > 10);
+      if (detail !== 'precision') {
+        assert.equal(GENE_SYMBOL_REGEX.test(`${info.label} ${info.description}`), false);
+      }
+    }
+  }
+
+  // Round 1 prompts reflect each stage
+  const survPrompt = getActiveRoundOffer(surv).oncologistPrompt;
+  const advPrompt = getActiveRoundOffer(adv).oncologistPrompt;
+  assert.notEqual(survPrompt, advPrompt);
+  assert.match(survPrompt, /vigilancia/i);
+  assert.match(advPrompt, /avanzado|extendido|diseminada/i);
+
+  // All 3 stages can be played cleanly to 100% liberation
+  for (const initial of [surv, early, adv]) {
+    let cur = initial;
+    let safety = 0;
+    while (!cur.finished && safety < 35) {
+      safety++;
+      const offer = getActiveRoundOffer(cur);
+      if (offer.oncologistPhase === 'diagnostic') {
+        cur = resolveOncologistDiagnosticTurn(cur, offer.oncologistDoorDiagnostics[0]).nextState;
+      } else {
+        let bestTherapy = offer.oncologistDoorTherapies[0];
+        let bestLib = -Infinity;
+        for (const tid of offer.oncologistDoorTherapies) {
+          const preview = resolveOncologistTurn(cur, tid).nextState;
+          if ((preview.oncologistLiberation ?? 0) > bestLib) {
+            bestLib = preview.oncologistLiberation ?? 0;
+            bestTherapy = tid;
+          }
+        }
+        cur = resolveOncologistTurn(cur, bestTherapy).nextState;
+      }
+    }
+    assert.equal(cur.finished, true, `Stage ${initial.oncologistStartStage} must reach completion`);
+    assert.equal(cur.oncologistLiberation, 100);
+    assert.equal(cur.clinical.tumorBurden, 0);
+  }
+});
+
 
 
 
