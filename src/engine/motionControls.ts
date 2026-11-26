@@ -5,6 +5,27 @@ export interface MotionCalibration {
   gamma: number; // left-to-right tilt baseline (deg)
 }
 
+export interface MotionSensorSettings {
+  /** Responsiveness multiplier: 0.4 (low) .. 2.2 (high), default 1.0 */
+  sensitivity: number;
+  /** Neutral deadzone in degrees around calibrated posture: 2 .. 14, default 6 */
+  deadzoneDeg: number;
+  /** When true, tilting toward the user moves forward instead of away */
+  invertForward: boolean;
+}
+
+export interface MotionDiagnostics {
+  hasReading: boolean;
+  pitchDeltaDeg: number;
+  rollDeltaDeg: number;
+  effectivePitchDeadzoneDeg: number;
+  effectiveRollDeadzoneDeg: number;
+  effectivePitchMaxDeg: number;
+  effectiveRollMaxDeg: number;
+  inDeadzone: boolean;
+  input: ControlAxisInput;
+}
+
 export interface ControlAxisInput {
   moveForward: number; // -1 (backward/south) .. +1 (forward/north)
   moveRight: number; // -1 (left/west) .. +1 (right/east)
@@ -15,6 +36,45 @@ export const MOTION_PITCH_DEADZONE_DEG = 7;
 export const MOTION_ROLL_DEADZONE_DEG = 6;
 export const MOTION_PITCH_MAX_DEG = 26;
 export const MOTION_ROLL_MAX_DEG = 24;
+
+export const MOTION_SENSITIVITY_MIN = 0.4;
+export const MOTION_SENSITIVITY_MAX = 2.2;
+export const MOTION_DEADZONE_MIN_DEG = 2;
+export const MOTION_DEADZONE_MAX_DEG = 14;
+
+export const DEFAULT_MOTION_SENSOR_SETTINGS: MotionSensorSettings = {
+  sensitivity: 1,
+  deadzoneDeg: 6,
+  invertForward: false,
+};
+
+export function sanitizeMotionSensorSettings(
+  raw?: Partial<MotionSensorSettings> | null
+): MotionSensorSettings {
+  const sensitivityRaw =
+    typeof raw?.sensitivity === 'number' && Number.isFinite(raw.sensitivity)
+      ? raw.sensitivity
+      : DEFAULT_MOTION_SENSOR_SETTINGS.sensitivity;
+  const deadzoneRaw =
+    typeof raw?.deadzoneDeg === 'number' && Number.isFinite(raw.deadzoneDeg)
+      ? raw.deadzoneDeg
+      : DEFAULT_MOTION_SENSOR_SETTINGS.deadzoneDeg;
+
+  const clampedSensitivity = Math.max(
+    MOTION_SENSITIVITY_MIN,
+    Math.min(MOTION_SENSITIVITY_MAX, sensitivityRaw)
+  );
+  const clampedDeadzone = Math.max(
+    MOTION_DEADZONE_MIN_DEG,
+    Math.min(MOTION_DEADZONE_MAX_DEG, deadzoneRaw)
+  );
+
+  return {
+    sensitivity: Number(clampedSensitivity.toFixed(2)),
+    deadzoneDeg: Math.round(clampedDeadzone),
+    invertForward: Boolean(raw?.invertForward),
+  };
+}
 
 /**
  * Normalizes both KeyboardEvent.code and KeyboardEvent.key into canonical movement tokens
@@ -101,24 +161,46 @@ function applyDeadzoneCurve(deltaDeg: number, deadzoneDeg: number, maxDeg: numbe
   return Math.sign(deltaDeg) * Number(curved.toFixed(4));
 }
 
+function computeEffectiveRanges(settings: MotionSensorSettings) {
+  const safe = sanitizeMotionSensorSettings(settings);
+  const pitchDeadzone = safe.deadzoneDeg + 1; // default 6 + 1 = 7°
+  const rollDeadzone = safe.deadzoneDeg; // default 6°
+  const pitchMax = Math.max(pitchDeadzone + 6, MOTION_PITCH_MAX_DEG / safe.sensitivity);
+  const rollMax = Math.max(rollDeadzone + 6, MOTION_ROLL_MAX_DEG / safe.sensitivity);
+  return { safe, pitchDeadzone, rollDeadzone, pitchMax, rollMax };
+}
+
 /**
- * Maps mobile DeviceOrientationEvent tilt angles (beta/gamma) relative to the calibrated
- * resting posture into smooth labyrinth movement and turning axes.
- * Handles portrait (0°), landscape-left (90°), and landscape-right (-90° / 270°).
+ * Computes full tilt diagnostics (deltas, deadzone status, and normalized control axes)
+ * used both by the 3D engine and the live sensor calibration visualizer.
  */
-export function computeMotionControlInput(
+export function computeMotionDiagnostics(
   orientation: { beta: number | null | undefined; gamma: number | null | undefined },
   calibration: MotionCalibration,
   cameraMode: LabyrinthCameraMode,
-  screenAngleDeg = 0
-): ControlAxisInput {
+  screenAngleDeg = 0,
+  settings: MotionSensorSettings = DEFAULT_MOTION_SENSOR_SETTINGS
+): MotionDiagnostics {
+  const { safe, pitchDeadzone, rollDeadzone, pitchMax, rollMax } =
+    computeEffectiveRanges(settings);
+
   if (
     typeof orientation.beta !== 'number' ||
     !Number.isFinite(orientation.beta) ||
     typeof orientation.gamma !== 'number' ||
     !Number.isFinite(orientation.gamma)
   ) {
-    return { moveForward: 0, moveRight: 0, turnDelta: 0 };
+    return {
+      hasReading: false,
+      pitchDeltaDeg: 0,
+      rollDeltaDeg: 0,
+      effectivePitchDeadzoneDeg: pitchDeadzone,
+      effectiveRollDeadzoneDeg: rollDeadzone,
+      effectivePitchMaxDeg: pitchMax,
+      effectiveRollMaxDeg: rollMax,
+      inDeadzone: true,
+      input: { moveForward: 0, moveRight: 0, turnDelta: 0 },
+    };
   }
 
   const rawDeltaBeta = orientation.beta - calibration.beta;
@@ -146,32 +228,58 @@ export function computeMotionControlInput(
     rollDelta = rawDeltaGamma;
   }
 
-  const forwardAxis = applyDeadzoneCurve(
-    pitchDelta,
-    MOTION_PITCH_DEADZONE_DEG,
-    MOTION_PITCH_MAX_DEG
-  );
-  const lateralAxis = applyDeadzoneCurve(
-    rollDelta,
-    MOTION_ROLL_DEADZONE_DEG,
-    MOTION_ROLL_MAX_DEG
-  );
-
-  if (cameraMode === 'first_person') {
-    // Tilt left (lateralAxis < 0) => turn left (turnDelta > 0); tilt right => turn right (turnDelta < 0)
-    return {
-      moveForward: forwardAxis,
-      moveRight: 0,
-      turnDelta: lateralAxis === 0 ? 0 : -lateralAxis,
-    };
+  if (safe.invertForward) {
+    pitchDelta = -pitchDelta;
   }
 
-  // Aerial map view: tilt forward/back moves north/south, tilt left/right moves west/east
+  const forwardAxis = applyDeadzoneCurve(pitchDelta, pitchDeadzone, pitchMax);
+  const lateralAxis = applyDeadzoneCurve(rollDelta, rollDeadzone, rollMax);
+
+  const input: ControlAxisInput =
+    cameraMode === 'first_person'
+      ? {
+          moveForward: forwardAxis,
+          moveRight: 0,
+          turnDelta: lateralAxis === 0 ? 0 : -lateralAxis,
+        }
+      : {
+          moveForward: forwardAxis,
+          moveRight: lateralAxis,
+          turnDelta: 0,
+        };
+
   return {
-    moveForward: forwardAxis,
-    moveRight: lateralAxis,
-    turnDelta: 0,
+    hasReading: true,
+    pitchDeltaDeg: Number(pitchDelta.toFixed(1)),
+    rollDeltaDeg: Number(rollDelta.toFixed(1)),
+    effectivePitchDeadzoneDeg: pitchDeadzone,
+    effectiveRollDeadzoneDeg: rollDeadzone,
+    effectivePitchMaxDeg: Number(pitchMax.toFixed(1)),
+    effectiveRollMaxDeg: Number(rollMax.toFixed(1)),
+    inDeadzone: forwardAxis === 0 && lateralAxis === 0,
+    input,
   };
+}
+
+/**
+ * Maps mobile DeviceOrientationEvent tilt angles (beta/gamma) relative to the calibrated
+ * resting posture into smooth labyrinth movement and turning axes.
+ * Handles portrait (0°), landscape-left (90°), and landscape-right (-90° / 270°).
+ */
+export function computeMotionControlInput(
+  orientation: { beta: number | null | undefined; gamma: number | null | undefined },
+  calibration: MotionCalibration,
+  cameraMode: LabyrinthCameraMode,
+  screenAngleDeg = 0,
+  settings: MotionSensorSettings = DEFAULT_MOTION_SENSOR_SETTINGS
+): ControlAxisInput {
+  return computeMotionDiagnostics(
+    orientation,
+    calibration,
+    cameraMode,
+    screenAngleDeg,
+    settings
+  ).input;
 }
 
 /**

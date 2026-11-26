@@ -4,8 +4,15 @@ import {
   combineControlInputs,
   computeKeyboardControlInput,
   computeMotionControlInput,
+  computeMotionDiagnostics,
   createMotionCalibration,
+  DEFAULT_MOTION_SENSOR_SETTINGS,
+  MOTION_DEADZONE_MAX_DEG,
+  MOTION_DEADZONE_MIN_DEG,
+  MOTION_SENSITIVITY_MAX,
+  MOTION_SENSITIVITY_MIN,
   normalizeDirectionKey,
+  sanitizeMotionSensorSettings,
 } from './motionControls';
 
 test('normalizeDirectionKey handles Arrow keys via code or key fallback and WASD/QE', () => {
@@ -85,4 +92,76 @@ test('combineControlInputs merges keyboard and motion axes safely within [-1, 1]
   assert.equal(merged.moveForward, 1);
   assert.equal(merged.moveRight, -0.4);
   assert.equal(merged.turnDelta, -1);
+});
+
+test('sanitizeMotionSensorSettings clamps sensitivity and deadzone safely', () => {
+  assert.deepEqual(sanitizeMotionSensorSettings(null), DEFAULT_MOTION_SENSOR_SETTINGS);
+
+  const high = sanitizeMotionSensorSettings({
+    sensitivity: 9.5,
+    deadzoneDeg: 40,
+    invertForward: true,
+  });
+  assert.equal(high.sensitivity, MOTION_SENSITIVITY_MAX);
+  assert.equal(high.deadzoneDeg, MOTION_DEADZONE_MAX_DEG);
+  assert.equal(high.invertForward, true);
+
+  const low = sanitizeMotionSensorSettings({
+    sensitivity: -1,
+    deadzoneDeg: 0,
+    invertForward: false,
+  });
+  assert.equal(low.sensitivity, MOTION_SENSITIVITY_MIN);
+  assert.equal(low.deadzoneDeg, MOTION_DEADZONE_MIN_DEG);
+  assert.equal(low.invertForward, false);
+});
+
+test('custom sensor sensitivity, deadzone, and invertForward alter tilt response predictably', () => {
+  const cal = createMotionCalibration(45, 0);
+  const moderateTilt = { beta: 33, gamma: 12 }; // pitch +12°, roll +12°
+
+  const lowSens = computeMotionControlInput(moderateTilt, cal, 'first_person', 0, {
+    sensitivity: 0.5,
+    deadzoneDeg: 6,
+    invertForward: false,
+  });
+  const medSens = computeMotionControlInput(moderateTilt, cal, 'first_person', 0, {
+    sensitivity: 1.0,
+    deadzoneDeg: 6,
+    invertForward: false,
+  });
+  const highSens = computeMotionControlInput(moderateTilt, cal, 'first_person', 0, {
+    sensitivity: 1.8,
+    deadzoneDeg: 6,
+    invertForward: false,
+  });
+
+  assert.ok(
+    lowSens.moveForward < medSens.moveForward && medSens.moveForward < highSens.moveForward,
+    `Expected monotonic sensitivity response: low=${lowSens.moveForward}, med=${medSens.moveForward}, high=${highSens.moveForward}`
+  );
+  assert.ok(
+    Math.abs(lowSens.turnDelta) < Math.abs(medSens.turnDelta) &&
+      Math.abs(medSens.turnDelta) < Math.abs(highSens.turnDelta),
+    'Expected monotonic lateral turn sensitivity response'
+  );
+
+  // Larger deadzone suppresses a 10° tilt completely
+  const wideDeadzone = computeMotionDiagnostics({ beta: 35, gamma: 9 }, cal, 'first_person', 0, {
+    sensitivity: 1.0,
+    deadzoneDeg: 12,
+    invertForward: false,
+  });
+  assert.equal(wideDeadzone.inDeadzone, true);
+  assert.equal(wideDeadzone.input.moveForward, 0);
+  assert.equal(wideDeadzone.input.turnDelta, 0);
+
+  // Invert forward flips pitch direction cleanly
+  const inverted = computeMotionDiagnostics(moderateTilt, cal, 'first_person', 0, {
+    sensitivity: 1.0,
+    deadzoneDeg: 6,
+    invertForward: true,
+  });
+  assert.ok(inverted.input.moveForward < 0, 'Inverted forward should negate forward axis');
+  assert.equal(inverted.pitchDeltaDeg, -12);
 });

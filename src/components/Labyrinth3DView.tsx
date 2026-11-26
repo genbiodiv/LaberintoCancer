@@ -2,12 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
-  Activity,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Compass,
   DoorOpen,
   Eye,
   Gamepad2,
@@ -15,15 +13,14 @@ import {
   Lightbulb,
   Lock,
   Maximize2,
-  Microscope,
   Minimize2,
   Minus,
   Monitor,
   Plus,
   RotateCcw,
   SkipForward,
+  SlidersHorizontal,
   Smartphone,
-  Stethoscope,
   Volume2,
   VolumeX,
   X,
@@ -57,13 +54,11 @@ import {
   resolvePlayerMovement,
 } from '../engine/labyrinthLayout';
 import {
-  describeCurrentSituationSimple,
   formatBiologyText,
   getCancerStrategyDisplayInfo,
   getDetailModeLabel,
   getDiagnosticDisplayInfo,
   getOncologistFindingsSummary,
-  getOncologistStageInfo,
   getTherapyDisplayInfo,
 } from '../engine/molecularAbstraction';
 import {
@@ -71,8 +66,11 @@ import {
   computeKeyboardControlInput,
   computeMotionControlInput,
   createMotionCalibration,
+  DEFAULT_MOTION_SENSOR_SETTINGS,
   MotionCalibration,
+  MotionSensorSettings,
   normalizeDirectionKey,
+  sanitizeMotionSensorSettings,
 } from '../engine/motionControls';
 import {
   getActiveRoundOffer,
@@ -86,7 +84,13 @@ import {
   SimulationState,
   TherapyId,
 } from '../engine/types';
-import { ThemeMode } from '../utils/storage';
+import {
+  loadMotionSensorSettings,
+  saveMotionSensorSettings,
+  ThemeMode,
+} from '../utils/storage';
+import { LabyrinthInfoPanel } from './LabyrinthInfoPanel';
+import { MotionSensorModal } from './MotionSensorModal';
 import { ThemeToggle } from './ThemeToggle';
 import {
   BioGrowthRig,
@@ -220,6 +224,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   const [webglUnavailable, setWebglUnavailable] = useState<boolean>(false);
   const [webglRetryNonce, setWebglRetryNonce] = useState<number>(0);
   const [motionSensorActive, setMotionSensorActive] = useState<boolean>(false);
+  const [motionSettings, setMotionSettings] = useState<MotionSensorSettings>(() =>
+    loadMotionSensorSettings()
+  );
+  const [sensorModalOpen, setSensorModalOpen] = useState<boolean>(false);
   const [showTouchPad, setShowTouchPad] = useState<boolean>(false);
   const [isTouchDevice] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -250,6 +258,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   // Mobile DeviceOrientation motion sensor refs (zero React re-renders inside sensor events)
   const motionActiveRef = useRef<boolean>(false);
   motionActiveRef.current = motionSensorActive;
+  const motionSettingsRef = useRef<MotionSensorSettings>(motionSettings);
+  motionSettingsRef.current = motionSettings;
+  const sensorModalOpenRef = useRef<boolean>(false);
+  sensorModalOpenRef.current = sensorModalOpen;
   const motionCalibrationRef = useRef<MotionCalibration | null>(null);
   const motionOrientationRef = useRef<{ beta: number | null; gamma: number | null }>({
     beta: null,
@@ -257,6 +269,28 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   });
   const motionReceivedReadingRef = useRef<boolean>(false);
   const motionFallbackTimerRef = useRef<number | null>(null);
+
+  const handleChangeMotionSettings = useCallback((patch: Partial<MotionSensorSettings>) => {
+    setMotionSettings((prev) => {
+      const clean = sanitizeMotionSensorSettings({ ...prev, ...patch });
+      saveMotionSensorSettings(clean);
+      return clean;
+    });
+  }, []);
+
+  const handleResetMotionSettings = useCallback(() => {
+    const defaults = { ...DEFAULT_MOTION_SENSOR_SETTINGS };
+    setMotionSettings(defaults);
+    saveMotionSensorSettings(defaults);
+  }, []);
+
+  const getLiveMotionReading = useCallback(
+    () => ({
+      orientation: motionOrientationRef.current,
+      calibration: motionCalibrationRef.current,
+    }),
+    []
+  );
 
   // Minimap player telemetry (throttled ~12Hz so React stays ultra-light)
   const [playerPose, setPlayerPose] = useState<{ x: number; z: number; yaw: number }>({
@@ -1307,10 +1341,11 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
 
       if (ctx) {
         // 1. Combined desktop arrow/WASD + touch pad + mobile DeviceOrientation controls
-        // Pause walking while a door confirmation modal is open
+        // Pause walking while a door confirmation or sensor calibration modal is open
         const combinedKeys = new Set<string>(heldKeys);
         virtualKeysRef.current.forEach((k) => combinedKeys.add(k));
-        const kbInput = selectedPortalRef.current
+        const movementPaused = Boolean(selectedPortalRef.current || sensorModalOpenRef.current);
+        const kbInput = movementPaused
           ? { moveForward: 0, moveRight: 0, turnDelta: 0 }
           : computeKeyboardControlInput(combinedKeys, cameraModeRef.current);
         const screenAngle =
@@ -1318,12 +1353,13 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             ? window.screen.orientation.angle
             : 0;
         const motionInput =
-          !selectedPortalRef.current && motionActiveRef.current && motionCalibrationRef.current
+          !movementPaused && motionActiveRef.current && motionCalibrationRef.current
             ? computeMotionControlInput(
                 motionOrientationRef.current,
                 motionCalibrationRef.current,
                 cameraModeRef.current,
-                screenAngle
+                screenAngle,
+                motionSettingsRef.current
               )
             : { moveForward: 0, moveRight: 0, turnDelta: 0 };
         const ctrl = combineControlInputs(kbInput, motionInput);
@@ -1877,149 +1913,53 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         />
       )}
 
-      {/* Top-Left Controls: Back to Start + Theme Toggle + Language Switch + Destination & Severity Chip */}
-      <div className="pointer-events-none absolute top-3 left-3 flex flex-col items-start gap-2">
-        {(onBackHome || onThemeChange || onMolecularDetailChange) && (
-          <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
-            {onBackHome && (
-              <button
-                type="button"
-                onClick={onBackHome}
-                className="bg-slate-950/92 hover:bg-slate-900 border border-slate-600/90 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-100 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5 text-slate-300" aria-hidden="true" />
-                Volver al inicio
-              </button>
-            )}
-            {onMolecularDetailChange && (
-              <button
-                type="button"
-                data-testid="hud-detail-cycle-btn"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  const next: MolecularDetailMode =
-                    molecularDetail === 'simple'
-                      ? 'logic'
-                      : molecularDetail === 'logic'
-                        ? 'precision'
-                        : 'simple';
-                  onMolecularDetailChange(next);
-                }}
-                title="Cambiar nivel de lenguaje (Simple / Lógica / Precisión)"
-                className={`border rounded-lg px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  molecularDetail === 'simple'
-                    ? 'bg-emerald-950/92 hover:bg-emerald-900 border-emerald-500/80 text-emerald-200'
-                    : 'bg-slate-950/92 hover:bg-slate-900 border-slate-600/90 text-slate-100'
-                }`}
-              >
-                <Lightbulb
-                  className={`w-3.5 h-3.5 shrink-0 ${
-                    molecularDetail === 'simple' ? 'text-emerald-400' : 'text-sky-400'
-                  }`}
-                  aria-hidden="true"
-                />
-                <span>{getDetailModeLabel(molecularDetail)}</span>
-              </button>
-            )}
-            {onThemeChange && (
-              <ThemeToggle theme={themeMode} onChange={onThemeChange} variant="hud" />
-            )}
+      {/* Compact Top-Left Action Bar (keeps upper-left view & door titles completely clear) */}
+      <div className="pointer-events-none absolute top-3 left-3 right-28 sm:right-auto flex flex-wrap items-center gap-1.5 z-10">
+        {onBackHome && (
+          <button
+            type="button"
+            onClick={onBackHome}
+            className="pointer-events-auto bg-slate-950/92 hover:bg-slate-900 border border-slate-600/90 rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-100 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-slate-300" aria-hidden="true" />
+            <span>Volver al inicio</span>
+          </button>
+        )}
+        {onMolecularDetailChange && (
+          <button
+            type="button"
+            data-testid="hud-detail-cycle-btn"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              const next: MolecularDetailMode =
+                molecularDetail === 'simple'
+                  ? 'logic'
+                  : molecularDetail === 'logic'
+                    ? 'precision'
+                    : 'simple';
+              onMolecularDetailChange(next);
+            }}
+            title="Cambiar nivel de lenguaje (Simple / Lógica / Precisión)"
+            className={`pointer-events-auto border rounded-lg px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+              molecularDetail === 'simple'
+                ? 'bg-emerald-950/92 hover:bg-emerald-900 border-emerald-500/80 text-emerald-200'
+                : 'bg-slate-950/92 hover:bg-slate-900 border-slate-600/90 text-slate-100'
+            }`}
+          >
+            <Lightbulb
+              className={`w-3.5 h-3.5 shrink-0 ${
+                molecularDetail === 'simple' ? 'text-emerald-400' : 'text-sky-400'
+              }`}
+              aria-hidden="true"
+            />
+            <span>{getDetailModeLabel(molecularDetail)}</span>
+          </button>
+        )}
+        {onThemeChange && (
+          <div className="pointer-events-auto">
+            <ThemeToggle theme={themeMode} onChange={onThemeChange} variant="hud" />
           </div>
         )}
-
-        <div className="w-[228px] sm:w-[282px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-2.5 sm:px-3 py-2 text-slate-100 space-y-1.5">
-          <div className="flex items-center justify-between gap-1.5 text-[10px] sm:text-[11px] font-mono text-slate-400">
-            <span className="inline-flex items-center gap-1 whitespace-nowrap min-w-0 truncate">
-              {state.mode === 'oncologist' ? (
-                oncologistPhase === 'diagnostic' ? (
-                  <Microscope className="w-3.5 h-3.5 shrink-0 text-cyan-400" aria-hidden="true" />
-                ) : (
-                  <Stethoscope className="w-3.5 h-3.5 shrink-0 text-sky-400" aria-hidden="true" />
-                )
-              ) : (
-                <Compass className="w-3.5 h-3.5 shrink-0 text-rose-400" aria-hidden="true" />
-              )}
-              <span className="truncate">
-                <span className="sm:hidden">R{state.currentRound}</span>
-                <span className="hidden sm:inline">Ronda {state.currentRound}</span>
-                {state.mode === 'oncologist' &&
-                  ` · ${
-                    oncologistPhase === 'diagnostic'
-                      ? molecularDetail === 'simple'
-                        ? 'Estudio'
-                        : 'Diagnóstico'
-                      : molecularDetail === 'simple'
-                        ? 'Tratamiento'
-                        : 'Intervención'
-                  }`}
-              </span>
-            </span>
-            <span className="text-slate-200 font-semibold tabular-nums whitespace-nowrap shrink-0">
-              {state.mode === 'cancer'
-                ? `Carga ${state.clinical.tumorBurden}/100`
-                : `Progreso ${destination.progress}%`}
-            </span>
-          </div>
-          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all duration-300 ${
-                state.mode === 'cancer'
-                  ? theme.phase >= 2
-                    ? 'bg-amber-400'
-                    : 'bg-rose-500'
-                  : theme.phase >= 2
-                    ? 'bg-emerald-400'
-                    : 'bg-sky-400'
-              }`}
-              style={{ width: `${destination.progress}%` }}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-2 text-[11px]">
-            <span className="font-semibold text-white truncate">
-              {state.mode === 'oncologist'
-                ? `${getOncologistStageInfo(state.oncologistStartStage ?? 'early', molecularDetail).label} · ${
-                    state.revealedExtent
-                      ? state.clinical.diseaseExtent
-                      : 'Extensión: Sin definir'
-                  }`
-                : theme.phaseLabel}
-            </span>
-            <span className="font-mono text-slate-400 tabular-nums shrink-0">
-              {state.accumulatedProblems.length}{' '}
-              {state.accumulatedProblems.length === 1 ? 'cambio' : 'cambios'}
-            </span>
-          </div>
-          <div
-            data-testid="labyrinth-severity-badge"
-            className="pt-1 border-t border-slate-800/90 flex items-center justify-between gap-2 text-[11px]"
-          >
-            <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: severity.accentCss }}
-                aria-hidden="true"
-              />
-              <span>Carga: {severity.shortLabel}</span>
-            </span>
-            <span className="inline-flex items-center gap-1 font-mono text-[10px] text-slate-400 tabular-nums shrink-0">
-              <Activity
-                className="w-3 h-3 shrink-0"
-                style={{ color: severity.accentCss }}
-                aria-hidden="true"
-              />
-              {severity.heartbeatBpm} ppm
-            </span>
-          </div>
-          {molecularDetail === 'simple' && (
-            <p
-              data-testid="labyrinth-simple-summary"
-              className="pt-1.5 border-t border-slate-800/90 text-[11px] leading-snug text-emerald-200/95"
-            >
-              {describeCurrentSituationSimple(state)}
-            </p>
-          )}
-        </div>
-
         {/* Always-available Observation Skip Button in Oncologist Mode */}
         {state.mode === 'oncologist' && !state.finished && (
           <button
@@ -2029,7 +1969,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
               e.currentTarget.blur();
               handleObserveSkipRound();
             }}
-            className="pointer-events-auto bg-slate-950/92 hover:bg-slate-900 border border-emerald-500/75 rounded-lg px-3 py-1.5 text-xs font-semibold text-emerald-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="pointer-events-auto bg-slate-950/92 hover:bg-slate-900 border border-emerald-500/75 rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-emerald-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Eye className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
             <span>Observación · Saltar ronda</span>
@@ -2038,11 +1978,22 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         )}
       </div>
 
-      {/* Hover Cue or Diagnostic / Sensor Toast (clears top HUD & minimap on mobile) */}
+      {/* Movable & Hideable Information Panel (defaults to bottom-left so door titles stay unobstructed) */}
+      <LabyrinthInfoPanel
+        state={state}
+        molecularDetail={molecularDetail}
+        oncologistPhase={oncologistPhase}
+        destinationProgress={destination.progress}
+        theme={theme}
+        severity={severity}
+        containerRef={stageRef}
+      />
+
+      {/* Hover Cue or Diagnostic / Sensor Toast (clears top buttons, minimap & bottom-left info panel) */}
       {(diagToast || hoveredLabel) && !selectedPortal && (
         <div
           role={diagToast ? 'status' : undefined}
-          className="pointer-events-none absolute bottom-24 left-3 right-3 sm:bottom-auto sm:top-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:max-w-sm bg-slate-950/94 border border-sky-500/70 rounded-lg px-3.5 py-2 text-xs text-slate-100 text-center"
+          className="pointer-events-none absolute top-14 left-3 right-28 sm:top-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:max-w-sm bg-slate-950/94 border border-sky-500/70 rounded-lg px-3.5 py-2 text-xs text-slate-100 text-center z-10"
         >
           {diagToast ?? hoveredLabel}
         </div>
@@ -2279,7 +2230,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           {isTouchDevice ? (
             <ul className="space-y-1 text-xs text-slate-300 leading-relaxed">
               <li>• Desliza el dedo en la pantalla para girar la vista.</li>
-              <li>• Activa Sensor para avanzar inclinando el teléfono, o abre las flechas en pantalla.</li>
+              <li>
+                • Activa Sensor para avanzar inclinando el teléfono, ajusta su sensibilidad en el
+                icono de calibración o abre las flechas en pantalla.
+              </li>
               <li>• Toca cualquier puerta para ver la decisión de esta ronda.</li>
             </ul>
           ) : (
@@ -2400,6 +2354,23 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             >
               <Smartphone className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               <span>{motionSensorActive ? 'Sensor ON' : 'Sensor'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setSensorModalOpen(true);
+              }}
+              aria-label="Ajustar y calibrar sensibilidad del sensor"
+              data-testid="motion-calibrate-open-btn"
+              className={`p-1 rounded cursor-pointer transition-colors ${
+                sensorModalOpen
+                  ? 'bg-sky-600 text-white hover:bg-sky-500'
+                  : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+              }`}
+              title="Ajustar y calibrar sensibilidad del sensor"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
             {motionSensorActive && (
               <button
@@ -2570,6 +2541,22 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           )}
         </div>
       </div>
+
+      <MotionSensorModal
+        open={sensorModalOpen}
+        motionActive={motionSensorActive}
+        sensorNotice={
+          diagToast && /giroscopio|sensor/i.test(diagToast) ? diagToast : null
+        }
+        cameraMode={cameraMode}
+        settings={motionSettings}
+        onChangeSettings={handleChangeMotionSettings}
+        onResetSettings={handleResetMotionSettings}
+        onToggleMotion={handleToggleMotionSensor}
+        onCalibrateNeutral={handleRecalibrateMotionSensor}
+        getLiveReading={getLiveMotionReading}
+        onClose={() => setSensorModalOpen(false)}
+      />
     </div>
   );
 };

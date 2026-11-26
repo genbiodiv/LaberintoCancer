@@ -4,6 +4,11 @@ import {
   SimulationState,
   TeacherConfig,
 } from '../engine/types';
+import {
+  DEFAULT_MOTION_SENSOR_SETTINGS,
+  MotionSensorSettings,
+  sanitizeMotionSensorSettings,
+} from '../engine/motionControls';
 import { DEFAULT_TEACHER_CONFIG } from '../engine/simulator';
 
 const ACTIVE_SESSION_KEY = 'gencircuit_active_session_v1';
@@ -11,6 +16,7 @@ const COMPLETED_RUNS_KEY = 'gencircuit_completed_runs_v1';
 const TEACHER_CONFIG_KEY = 'gencircuit_teacher_config_v1';
 const CUSTOM_EVIDENCE_KEY = 'gencircuit_custom_evidence_v1';
 const THEME_MODE_KEY = 'el_laberinto_theme_v1';
+const MOTION_SETTINGS_KEY = 'el_laberinto_motion_settings_v1';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -139,5 +145,26 @@ export function loadCustomEvidence(): CosmicEvidenceRecord[] {
     return JSON.parse(raw) as CosmicEvidenceRecord[];
   } catch {
     return [];
+  }
+}
+
+export function loadMotionSensorSettings(): MotionSensorSettings {
+  try {
+    const raw = localStorage.getItem(MOTION_SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_MOTION_SENSOR_SETTINGS };
+    return sanitizeMotionSensorSettings(JSON.parse(raw) as Partial<MotionSensorSettings>);
+  } catch {
+    return { ...DEFAULT_MOTION_SENSOR_SETTINGS };
+  }
+}
+
+export function saveMotionSensorSettings(settings: MotionSensorSettings): void {
+  try {
+    localStorage.setItem(
+      MOTION_SETTINGS_KEY,
+      JSON.stringify(sanitizeMotionSensorSettings(settings))
+    );
+  } catch {
+    // Ignore storage errors
   }
 }
