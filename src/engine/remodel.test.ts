@@ -4,9 +4,12 @@ import {
   describeCurrentSituationSimple,
   describeTurnResolutionSimple,
   formatBiologyText,
+  getCancerStrategyDisplayInfo,
   getDiagnosticDisplayInfo,
+  getGeneDisplayShort,
   getHallmarkDisplayInfo,
   getModelFieldOptions,
+  getOncologistFindingsSummary,
   getOncologistStageInfo,
   getScenarioDisplayInfo,
   getTherapyDisplayInfo,
@@ -386,7 +389,7 @@ test('unlimited mode in Cancer role continues past maxRounds and finishes exactl
   assert.equal(computeDestinationProgress(state).progress, 100);
   assert.equal(computeDestinationProgress(state).isReached, true);
   assert.ok(state.history.length > 3, `Expected >3 rounds in unlimited mode, got ${state.history.length}`);
-  assert.match(state.outcomeTitle ?? '', /100% de cáncer/i);
+  assert.match(state.outcomeTitle ?? '', /Carga tumoral al 100%/i);
 });
 
 test('unlimited mode in Oncologist role continues past maxRounds and finishes exactly at 100% liberation', () => {
@@ -438,7 +441,7 @@ test('unlimited mode in Oncologist role continues past maxRounds and finishes ex
     state.history.length > 3,
     `Expected >3 rounds in unlimited mode, got ${state.history.length}`
   );
-  assert.match(state.outcomeTitle ?? '', /100% de liberación/i);
+  assert.match(state.outcomeTitle ?? '', /Control tumoral.*100%/i);
 });
 
 test('labyrinth camera zoom clamps bounds, steps cleanly, narrows 1st-person FOV on zoom-in, and scales aerial distance', () => {
@@ -811,7 +814,7 @@ test('Oncologist starting stages (surveillance, early, advanced) configure disti
   const advPrompt = getActiveRoundOffer(adv).oncologistPrompt;
   assert.notEqual(survPrompt, advPrompt);
   assert.match(survPrompt, /vigilancia/i);
-  assert.match(advPrompt, /avanzado|extendido|diseminada/i);
+  assert.match(advPrompt, /avanzad[oa]|extendido|diseminada/i);
 
   // All 3 stages can be played cleanly to 100% liberation
   for (const initial of [surv, early, adv]) {
@@ -838,6 +841,86 @@ test('Oncologist starting stages (surveillance, early, advanced) configure disti
     assert.equal(cur.finished, true, `Stage ${initial.oncologistStartStage} must reach completion`);
     assert.equal(cur.oncologistLiberation, 100);
     assert.equal(cur.clinical.tumorBurden, 0);
+  }
+});
+
+test('Editorial & pedagogical copy guarantees: diagnostic questions, extent coherence, 3-level strategy contrast, and hallmark scale direction', () => {
+  // 1. Imaging study uses exact clear question and zero "Revela: Revela" duplication
+  const imaging = DIAGNOSTIC_TOOLS.find((t) => t.id === 'imaging')!;
+  for (const detail of ['simple', 'logic', 'precision'] as const) {
+    const info = getDiagnosticDisplayInfo(imaging, detail);
+    assert.equal(info.summary, '¿Qué tamaño tiene el tumor y hasta dónde se ha extendido?');
+    assert.equal(/^revela\b/i.test(info.revealsDescription), false);
+  }
+  for (const tool of DIAGNOSTIC_TOOLS) {
+    assert.equal(
+      /^revela\b/i.test(tool.revealsDescription),
+      false,
+      `Tool ${tool.id} must not start with Revela`
+    );
+    assert.ok(
+      tool.summary.includes('?'),
+      `Tool ${tool.id} summary should pose a distinguishing biological question`
+    );
+  }
+
+  // 2. Round 1 Oncologist early opening avoids premature "localizada" contradiction before Imaging
+  const early = createInitialSimulation('oncologist', 'UNIFIED', '', 'quick', undefined, 6, 404, true, 'early');
+  const round1 = getActiveRoundOffer(early);
+  assert.equal(round1.oncologistPrompt, 'Se ha detectado un tumor pequeño. ¿Qué quieres averiguar primero?');
+  assert.equal(/\blocalizad[oa]\b/i.test(round1.oncologistPrompt), false);
+
+  const findingsBefore = getOncologistFindingsSummary(early, 'logic');
+  assert.ok(findingsBefore.items.some((i) => /Sin definir/i.test(i.value)));
+
+  const afterImaging = resolveOncologistDiagnosticTurn(early, 'imaging').nextState;
+  const findingsAfter = getOncologistFindingsSummary(afterImaging, 'logic');
+  assert.ok(findingsAfter.items.some((i) => /Localizada/i.test(i.value)));
+  assert.match(findingsAfter.interventionGuidance, /localizado|cirugía|radioterapia/i);
+
+  // 3. EGFR vs KRAS 3-level strategy copy preserves biological contrast (external signal vs autonomous)
+  const cancerState = createInitialSimulation('cancer', 'UNIFIED', '', 'quick', undefined, 6, 123, true);
+  const cancerOffer = getActiveRoundOffer(cancerState);
+  for (const detail of ['simple', 'logic', 'precision'] as const) {
+    for (const strat of cancerOffer.cancerStrategies) {
+      const display = getCancerStrategyDisplayInfo(strat, detail);
+      assert.ok(display.title.length > 10 && display.effect.length > 10 && display.cost.length > 10);
+      assert.notEqual(display.title.toLowerCase(), display.effect.toLowerCase());
+      if (detail !== 'precision') {
+        assert.equal(GENE_SYMBOL_REGEX.test(`${display.title} ${display.effect} ${display.cost}`), false);
+      }
+    }
+  }
+  const egfrOpt = cancerOffer.cancerStrategies.find((s) => s.problemMutation?.id === 'prob-egfr');
+  const krasOpt = cancerOffer.cancerStrategies.find((s) => s.problemMutation?.id === 'prob-kras');
+  if (egfrOpt && krasOpt) {
+    const egfrLogic = getCancerStrategyDisplayInfo(egfrOpt, 'logic');
+    const krasLogic = getCancerStrategyDisplayInfo(krasOpt, 'logic');
+    assert.match(`${egfrLogic.title} ${egfrLogic.effect} ${egfrLogic.cost}`, /señal externa|estímulo externo/i);
+    assert.match(`${krasLogic.title} ${krasLogic.effect}`, /falte el estímulo externo|desaparece|sin.*extern/i);
+  }
+
+  // 4. Hallmark short labels unambiguously indicate tumor capability direction
+  const invertedBareLabels = new Set(['Apoptosis', 'Supresores', 'Inmunidad']);
+  for (const h of HALLMARKS_CATALOG) {
+    assert.equal(
+      invertedBareLabels.has(h.shortLabel),
+      false,
+      `Hallmark ${h.id} has inverted/ambiguous shortLabel: ${h.shortLabel}`
+    );
+  }
+  const apop = HALLMARKS_CATALOG.find((h) => h.id === 'resisting_cell_death')!;
+  assert.equal(apop.shortLabel, 'Resistencia a la apoptosis');
+
+  // 5. No cryptic abbreviations in gene process short labels or 3D door sublabels
+  for (const prob of PROBLEM_CATALOG) {
+    const shortLogic = getGeneDisplayShort(prob.geneSymbol, 'logic');
+    assert.equal(/mitog\.|metab\.|ener\./i.test(shortLogic), false, `Abbreviation found: ${shortLogic}`);
+  }
+  const cancerLayout = buildLabyrinthLayout(cancerState, 'logic');
+  for (const portal of cancerLayout.portals.filter((p) => p.status === 'active')) {
+    assert.match(portal.sublabel, /población|células/i);
+    assert.equal(/\bTox\b/i.test(portal.sublabel), false);
   }
 });
 

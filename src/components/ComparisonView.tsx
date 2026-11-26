@@ -69,8 +69,8 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
               {fmt(cancerRun.outcomeTitle)}
             </div>
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs font-mono tabular-nums text-slate-700 dark:text-slate-300">
-              <div>Carga final: {cancerRun.finalBurden}/100</div>
-              <div>Clon dominante: {cancerRun.dominantCloneShare}%</div>
+              <div>Carga tumoral: {cancerRun.finalBurden}/100</div>
+              <div>Clon dominante: {cancerRun.dominantCloneShare}% del tumor</div>
             </div>
             <div className="text-xs text-slate-600 dark:text-slate-300">
               {fmt(cancerRun.dominantCloneName)}
@@ -101,11 +101,11 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
             </div>
             <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs font-mono tabular-nums text-slate-700 dark:text-slate-300">
               <div>Carga: {oncologistRun.finalBurden}/100</div>
-              <div>CdV: {oncologistRun.finalQol}/100</div>
-              <div>Tox: {oncologistRun.finalToxicity}/100</div>
+              <div>Bienestar: {oncologistRun.finalQol}/100</div>
+              <div>Toxicidad: {oncologistRun.finalToxicity}/100</div>
             </div>
             <div className="text-xs text-slate-600 dark:text-slate-300">
-              {fmt(oncologistRun.dominantCloneName)} ({oncologistRun.dominantCloneShare}%)
+              {fmt(oncologistRun.dominantCloneName)} ({oncologistRun.dominantCloneShare}% de la población)
             </div>
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
               {oncologistRun.history.map((h) => (

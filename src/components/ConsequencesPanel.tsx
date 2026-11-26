@@ -109,7 +109,7 @@ export const ConsequencesPanel: React.FC<ConsequencesPanelProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
-        {/* Destination Proximity Card */}
+        {/* Progress & Model Variable Card */}
         <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2 text-xs">
             <span className="font-semibold text-slate-900 dark:text-white inline-flex items-center gap-1.5">
@@ -121,10 +121,14 @@ export const ConsequencesPanel: React.FC<ConsequencesPanelProps> = ({
                 }`}
                 aria-hidden="true"
               />
-              {destination.stageLabel}
+              {mode === 'cancer'
+                ? isSimple
+                  ? 'Tamaño del tumor'
+                  : 'Carga tumoral'
+                : 'Progreso de la partida'}
             </span>
             <span className="font-mono font-bold text-slate-900 dark:text-white tabular-nums">
-              {destination.progress}%
+              {mode === 'cancer' ? `${clinical.tumorBurden}/100` : `${destination.progress}%`}
             </span>
           </div>
           <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -142,7 +146,7 @@ export const ConsequencesPanel: React.FC<ConsequencesPanelProps> = ({
             />
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
-            {mode === 'cancer' ? 'Meta: 100% de cáncer' : 'Meta: 100% de liberación'}
+            {destination.stageLabel} · {destination.destinationTitle}
           </div>
         </section>
 
@@ -167,8 +171,8 @@ export const ConsequencesPanel: React.FC<ConsequencesPanelProps> = ({
                         }`
                       : `Extensión: ${clinical.diseaseExtent}`
                     : isSimple
-                      ? 'Ubicación: sin revisar'
-                      : 'Extensión: sin estudio'}
+                      ? 'Ubicación: Sin definir'
+                      : 'Extensión: Sin definir'}
                 </span>
               </div>
 
@@ -240,13 +244,13 @@ export const ConsequencesPanel: React.FC<ConsequencesPanelProps> = ({
                     ? 'Reparación ADN y TP53'
                     : isSimple
                       ? 'Reparación del ADN e inspector'
-                      : 'Reparación ADN y guardián genómico'
+                      : 'Reparación del ADN y control de daño'
                 }
                 value={defenses.dnaRepair}
                 tone={defenses.dnaRepair >= 60 ? 'good' : 'warn'}
               />
               <MetricBar
-                label={isSimple ? 'Botón de apagado seguro' : 'Capacidad apoptótica'}
+                label={isSimple ? 'Botón de apagado seguro' : 'Capacidad de apoptosis'}
                 value={defenses.apoptosisCapacity}
                 tone={defenses.apoptosisCapacity >= 60 ? 'good' : 'warn'}
               />

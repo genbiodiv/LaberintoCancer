@@ -132,7 +132,7 @@ const GeneNodeComponent: React.FC<NodeProps<Node<GeneNodeData>>> = ({ data }) =>
       type="button"
       onClick={() => onSelect(gene.symbol)}
       aria-label={`${molecularDetail === 'precision' ? `Gen ${gene.symbol}` : nodeLabel}, estado ${meta.label}`}
-      className={`w-[162px] text-left rounded-lg border px-2.5 py-2 transition-all duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-sky-500 ${
+      className={`w-[178px] text-left rounded-lg border px-2.5 py-2 transition-all duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-sky-500 ${
         meta.border
       } ${meta.bg} ${
         isHighlighted
@@ -145,11 +145,11 @@ const GeneNodeComponent: React.FC<NodeProps<Node<GeneNodeData>>> = ({ data }) =>
         position={Position.Top}
         className="!w-1.5 !h-1.5 !bg-slate-400 dark:!bg-slate-500 !border-none"
       />
-      <div className="flex items-center justify-between gap-1">
+      <div className="flex items-start justify-between gap-1.5">
         <span
           className={`${
-            molecularDetail === 'precision' ? 'font-mono text-xs' : 'text-[11px]'
-          } font-semibold tracking-tight truncate ${meta.text}`}
+            molecularDetail === 'precision' ? 'font-mono text-xs' : 'text-[11px] leading-tight'
+          } font-semibold tracking-tight ${meta.text}`}
           title={nodeLabel}
         >
           {nodeLabel}
@@ -641,11 +641,16 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                               </span>
                             </div>
                           </div>
-                          <span
-                            className={`font-mono text-lg font-bold tabular-nums ${accentColors[idx % accentColors.length]}`}
-                          >
-                            {clone.share}%
-                          </span>
+                          <div className="text-right shrink-0">
+                            <span
+                              className={`font-mono text-lg font-bold tabular-nums ${accentColors[idx % accentColors.length]}`}
+                            >
+                              {clone.share}%
+                            </span>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                              {molecularDetail === 'simple' ? 'de las células' : 'de la población'}
+                            </div>
+                          </div>
                         </div>
 
                         <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -653,7 +658,7 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                         </p>
 
                         {/* Compact metrics grid */}
-                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-800 text-[11px]">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-800 text-[11px]">
                           <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
                             <TrendingUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" aria-hidden="true" />
                             <span>
@@ -666,7 +671,7 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                           <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" aria-hidden="true" />
                             <span>
-                              {molecularDetail === 'simple' ? 'Fácil de frenar' : 'Sens. apoptosis'}{' '}
+                              {molecularDetail === 'simple' ? 'Fácil de frenar' : 'Sensibilidad a apoptosis'}{' '}
                               <strong className="font-mono tabular-nums text-slate-900 dark:text-white">
                                 {clone.apoptosisSensitivity}
                               </strong>
@@ -675,7 +680,7 @@ export const MolecularCanvas: React.FC<MolecularCanvasProps> = ({
                           <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
                             <MinusCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" aria-hidden="true" />
                             <span>
-                              {molecularDetail === 'simple' ? 'Gasto energía' : 'Costo metab.'}{' '}
+                              {molecularDetail === 'simple' ? 'Gasto energía' : 'Costo metabólico'}{' '}
                               <strong className="font-mono tabular-nums text-slate-900 dark:text-white">
                                 {clone.metabolicCost}
                               </strong>

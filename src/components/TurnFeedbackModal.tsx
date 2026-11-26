@@ -64,7 +64,7 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
           <div className="min-w-0">
             <div className="text-xs font-mono text-slate-500 dark:text-slate-400">
               {isFinished
-                ? `Meta alcanzada (100%) · Ronda ${resolution.roundNumber}`
+                ? `Recorrido completado · Ronda ${resolution.roundNumber}`
                 : `Ronda ${resolution.roundNumber}`}
             </div>
             <h2
@@ -88,7 +88,7 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
               <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
               <span>
                 {resolution.actionKind === 'diagnostic'
-                  ? 'Diagnóstico completado'
+                  ? 'Estudio completado'
                   : resolution.actionKind === 'observation'
                     ? 'Observación clínica'
                     : 'Intervención aplicada'}
@@ -139,21 +139,27 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
             </section>
           )}
 
-          {/* Core Visual Meter: Healthy Cell (0%) -> Current/Final Cancer Rate (%) */}
+          {/* Core Visual Meter: Tumor Burden (0-100) */}
           <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 p-4 space-y-3">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                {isFinished ? 'Tasa final de cáncer' : 'Tasa actual de cáncer'}
+                {isSimple
+                  ? isFinished
+                    ? 'Tamaño final del tumor'
+                    : 'Tamaño actual del tumor'
+                  : isFinished
+                    ? 'Carga tumoral final'
+                    : 'Carga tumoral actual'}
               </span>
               <div className="flex items-baseline gap-2 font-mono tabular-nums">
                 <span className="text-xs text-slate-400 dark:text-slate-500">
-                  {cancerRateBefore}%
+                  {cancerRateBefore}/100
                 </span>
                 <span className="text-xs text-slate-400 dark:text-slate-500" aria-hidden="true">
                   →
                 </span>
                 <span className="text-lg font-bold text-slate-900 dark:text-white">
-                  {cancerRateAfter}%
+                  {cancerRateAfter}/100
                 </span>
                 <span
                   className={`text-xs font-semibold ${
@@ -164,7 +170,7 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
                         : 'text-slate-500 dark:text-slate-400'
                   }`}
                 >
-                  ({cancerDelta > 0 ? `+${cancerDelta}%` : `${cancerDelta}%`})
+                  ({cancerDelta > 0 ? `+${cancerDelta}` : `${cancerDelta}`})
                 </span>
               </div>
             </div>
@@ -183,22 +189,22 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
                 />
               </div>
               <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                <span>0% · Célula sana</span>
-                <span>100% · Cáncer avanzado</span>
+                <span>0 · Sin carga tumoral</span>
+                <span>100 · Carga tumoral máxima</span>
               </div>
             </div>
 
-            {/* Plain-Spanish Patient Status in Oncologist Mode (zero cryptic abbreviations) */}
+            {/* Plain-Spanish Patient Status in Oncologist Mode */}
             {resolution.mode === 'oncologist' && (
               <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2.5 text-xs">
                 {isUnlimited && (
                   <div className="space-y-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold text-slate-900 dark:text-white">
-                        Progreso hacia liberación total
+                        Progreso de la partida
                       </span>
                       <span className="font-mono font-bold text-sky-700 dark:text-sky-400 tabular-nums">
-                        {liberationAfter}% / 100%
+                        {liberationAfter}%
                       </span>
                     </div>
                     <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -216,18 +222,18 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <span className="text-slate-500 dark:text-slate-400 block">
-                      Bienestar del paciente
+                      {isSimple ? 'Bienestar del paciente' : 'Calidad de vida'}
                     </span>
                     <span className="font-mono font-semibold text-slate-900 dark:text-white tabular-nums">
-                      {patientWellbeing}%
+                      {patientWellbeing}/100
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-500 dark:text-slate-400 block">
-                      Efectos secundarios
+                      {isSimple ? 'Desgaste acumulado' : 'Toxicidad acumulada'}
                     </span>
                     <span className="font-mono font-semibold text-slate-900 dark:text-white tabular-nums">
-                      {sideEffects}%
+                      {sideEffects}/100
                     </span>
                   </div>
                 </div>
@@ -235,7 +241,7 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
             )}
           </section>
 
-          {/* Plain Explanation of What Happened + Molecular/Cellular Ramifications */}
+          {/* Plain Explanation of What Happened / Diagnostic Finding + Molecular/Cellular Ramifications */}
           <section className="space-y-2.5">
             {isSimple && (
               <div
@@ -253,7 +259,11 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
             )}
 
             <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
-              {isSimple ? 'Detalle de lo ocurrido' : 'Qué pasó en esta ronda'}
+              {resolution.actionKind === 'diagnostic'
+                ? 'Hallazgo del estudio'
+                : isSimple
+                  ? 'Qué pasó en esta ronda'
+                  : 'Qué ocurrió y por qué'}
             </h3>
             <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
               {fmt(resolution.whatHappened)}
@@ -261,17 +271,23 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
             {resolution.cellularProcessChanged && (
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-3 py-2 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                 <strong className="text-slate-900 dark:text-white">
-                  {isSimple ? 'Efecto en las células:' : 'Ramificación molecular y celular:'}
+                  {resolution.actionKind === 'diagnostic'
+                    ? 'Cómo orienta la siguiente decisión:'
+                    : isSimple
+                      ? 'Efecto en las células:'
+                      : 'Consecuencia molecular y celular:'}
                 </strong>{' '}
                 {fmt(resolution.cellularProcessChanged)}
               </div>
             )}
           </section>
 
-          {/* Cell Population Breakdown (Visual Bars, Simple Labels) */}
+          {/* Cell Population Breakdown */}
           <section className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
             <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
-              {isSimple ? 'Cómo cambiaron los grupos de células' : 'Cambio en las poblaciones de células'}
+              {isSimple
+                ? 'Proporción de grupos de células'
+                : 'Proporción de poblaciones celulares'}
             </h3>
             <div className="space-y-2">
               {resolution.clonesAfter.map((after, idx) => {

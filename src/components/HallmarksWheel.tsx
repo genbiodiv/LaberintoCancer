@@ -82,9 +82,16 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
 
   return (
     <div className="space-y-3">
-      <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
-        {isSimple ? 'Habilidades del cáncer' : 'Hallmarks (Hanahan, 2026)'}
-      </h3>
+      <div className="space-y-0.5">
+        <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
+          {isSimple ? 'Habilidades del cáncer' : 'Capacidades del cáncer (Hanahan)'}
+        </h3>
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+          {isSimple
+            ? 'Puntaje más alto = el tumor usa más esta estrategia.'
+            : 'Puntaje más alto = mayor ventaja tumoral en esa capacidad.'}
+        </p>
+      </div>
 
       {/* Circular Interactive SVG Diagram */}
       <div className="flex flex-col items-center">
@@ -194,8 +201,8 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
           </text>
         </svg>
 
-        {/* Compact clickable selector for tier-1 and other hallmarks */}
-        <div className="w-full mt-1 grid grid-cols-3 gap-1">
+        {/* Readable 2-column selector with full direction-accurate labels */}
+        <div className="w-full mt-1 grid grid-cols-2 gap-1.5">
           {HALLMARKS_CATALOG.map((h, i) => {
             const active = selectedId === h.id;
             const info = getHallmarkDisplayInfo(h, molecularDetail);
@@ -204,7 +211,7 @@ export const HallmarksWheel: React.FC<HallmarksWheelProps> = ({
                 key={h.id}
                 type="button"
                 onClick={() => setSelectedId(h.id)}
-                className={`px-1.5 py-1 text-[10px] rounded text-left truncate transition-colors cursor-pointer ${
+                className={`px-2 py-1.5 text-[10px] leading-tight rounded text-left transition-colors cursor-pointer ${
                   active
                     ? 'bg-slate-900 dark:bg-sky-600 text-white font-semibold'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'

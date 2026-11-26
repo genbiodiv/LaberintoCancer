@@ -1,5 +1,6 @@
 import { SCENARIOS } from './scenarios';
 import {
+  CancerStrategyOption,
   DiagnosticToolDef,
   DiagnosticToolId,
   EnablingCharacteristicDef,
@@ -27,84 +28,84 @@ export interface ProcessDescriptor {
  */
 export const GENE_TO_PROCESS_MAP: Record<string, ProcessDescriptor> = {
   EGFR: {
-    title: 'Receptor de señal mitogénica',
-    shortTitle: 'Receptor mitog.',
+    title: 'Receptor de señales de crecimiento',
+    shortTitle: 'Receptor señal',
     capabilityGroup: 'Señalización proliferativa',
   },
   KRAS: {
-    title: 'Interruptor distal de proliferación',
-    shortTitle: 'Interruptor distal',
+    title: 'Vía interna de división autónoma',
+    shortTitle: 'Señal autónoma',
     capabilityGroup: 'Señalización proliferativa',
   },
   PIK3CA: {
-    title: 'Eje de supervivencia y metabolismo',
-    shortTitle: 'Eje supervivencia',
-    capabilityGroup: 'Supervivencia y metabolismo',
+    title: 'Vía de nutrientes y supervivencia',
+    shortTitle: 'Nutrientes y vida',
+    capabilityGroup: 'Metabolismo y supervivencia',
   },
   PTEN: {
-    title: 'Freno lipídico de supervivencia',
-    shortTitle: 'Freno supervivencia',
+    title: 'Freno interno de supervivencia',
+    shortTitle: 'Freno interno',
     capabilityGroup: 'Supresión de crecimiento',
   },
   RB1: {
-    title: 'Freno del punto de control G1/S',
-    shortTitle: 'Freno G1/S',
+    title: 'Freno principal del ciclo celular',
+    shortTitle: 'Freno del ciclo',
     capabilityGroup: 'Control del ciclo celular',
   },
   CDK6: {
-    title: 'Motor de entrada al ciclo celular',
-    shortTitle: 'Motor ciclo',
+    title: 'Acelerador del ciclo celular',
+    shortTitle: 'Acelerador ciclo',
     capabilityGroup: 'Control del ciclo celular',
   },
   CDKN2A: {
-    title: 'Freno del motor del ciclo',
-    shortTitle: 'Freno motor',
+    title: 'Freno de envejecimiento celular',
+    shortTitle: 'Freno senescencia',
     capabilityGroup: 'Supresión de crecimiento',
   },
   ATM: {
-    title: 'Sensor de daño al ADN',
-    shortTitle: 'Sensor daño ADN',
+    title: 'Sensor temprano de daño al ADN',
+    shortTitle: 'Sensor de ADN',
     capabilityGroup: 'Detección y reparación',
   },
   TP53: {
-    title: 'Guardián del daño genómico',
-    shortTitle: 'Guardián genómico',
+    title: 'Alarma principal de daño al ADN',
+    shortTitle: 'Alarma de ADN',
     capabilityGroup: 'Respuesta al daño y apoptosis',
   },
   BAX: {
-    title: 'Efector de muerte programada',
-    shortTitle: 'Efector apoptosis',
+    title: 'Ejecutor de la apoptosis',
+    shortTitle: 'Ejecutor apoptosis',
     capabilityGroup: 'Apoptosis intrínseca',
   },
   BCL2: {
-    title: 'Escudo anti-apoptótico',
-    shortTitle: 'Escudo celular',
-    capabilityGroup: 'Resistencia a muerte celular',
+    title: 'Bloqueador de la apoptosis',
+    shortTitle: 'Bloqueo apoptosis',
+    capabilityGroup: 'Resistencia a la apoptosis',
   },
   MET: {
-    title: 'Receptor de escape paralelo',
-    shortTitle: 'Vía paralela',
-    capabilityGroup: 'Bypass proliferativo',
+    title: 'Receptor alterno de invasión',
+    shortTitle: 'Receptor alterno',
+    capabilityGroup: 'Invasión y vía alterna',
   },
   VEGFA: {
-    title: 'Señal de angiogénesis',
-    shortTitle: 'Angiogénesis',
+    title: 'Señal de nuevos vasos sanguíneos',
+    shortTitle: 'Nuevos vasos',
     capabilityGroup: 'Inducción vascular',
   },
   PDL1: {
-    title: 'Señal de evasión inmune',
+    title: 'Señal inhibidora inmune',
     shortTitle: 'Evasión inmune',
-    capabilityGroup: 'Escape inmunológico',
+    capabilityGroup: 'Evasión inmune',
   },
   CD274: {
-    title: 'Señal de evasión inmune',
+    title: 'Señal inhibidora inmune',
     shortTitle: 'Evasión inmune',
-    capabilityGroup: 'Escape inmunológico',
+    capabilityGroup: 'Evasión inmune',
   },
   MYC: {
-    title: 'Amplificador metabólico y mitótico',
+    title: 'Amplificador de crecimiento',
     shortTitle: 'Amplificador',
-    capabilityGroup: 'Metabolismo y proliferación',
+    capabilityGroup: 'Metabolismo y división',
   },
 };
 
@@ -225,7 +226,7 @@ const THERAPY_LOGIC_NAMES: Record<TherapyId, { name: string; shortName: string }
   radiotherapy: { name: 'Radioterapia dirigida local', shortName: 'Radioterapia' },
   chemotherapy: { name: 'Quimioterapia citotóxica sistémica', shortName: 'Quimioterapia' },
   egfr_tki: {
-    name: 'Bloqueo de receptor mitogénico de membrana',
+    name: 'Bloqueo del receptor de crecimiento',
     shortName: 'Bloqueo receptor',
   },
   cdk46_inhibitor: {
@@ -345,44 +346,39 @@ export const DIAGNOSTIC_SIMPLE_INFO: Record<
   { name: string; shortName: string; summary: string; revealsDescription: string }
 > = {
   imaging: {
-    name: 'Estudio de imágenes (escáner)',
+    name: 'Estudio de imágenes',
     shortName: 'Imágenes',
-    summary:
-      'Toma imágenes internas del cuerpo para ver qué tan grande es el tumor y dónde está ubicado.',
+    summary: '¿Qué tamaño tiene el tumor y hasta dónde se ha extendido?',
     revealsDescription:
-      'Muestra si el tumor sigue en un solo sitio o ya se extendió, ayudando a saber si sirve operar o usar radioterapia.',
+      'Muestra si el tumor sigue en un solo sitio o ya se extendió, y si sirve operar o usar radioterapia.',
   },
   biopsy: {
     name: 'Biopsia (ver el tejido al microscopio)',
     shortName: 'Biopsia',
-    summary:
-      'Revisa una pequeña muestra del tejido para ver qué tan rápido crecen las células y si sus frenos siguen activos.',
+    summary: '¿Siguen funcionando los frenos que detienen a las células dañadas?',
     revealsDescription:
-      'Indica si el freno de división, el inspector de seguridad del ADN y el botón de apagado siguen funcionando.',
+      'Indica si el freno de división, el inspector del ADN y el botón de apagado siguen activos.',
   },
   molecular_profile: {
     name: 'Mapa interno de las células',
     shortName: 'Mapa interno',
-    summary:
-      'Analiza a fondo qué piezas internas del tumor están fallando y cuántos grupos de células distintas hay.',
+    summary: '¿Qué piezas empujan al tumor a crecer y cuántos grupos distintos hay?',
     revealsDescription:
-      'Destapa qué piezas aceleran el tumor y cuáles frenos se rompieron para elegir medicamentos más precisos.',
+      'Muestra qué señales están encendidas, qué frenos se perdieron y si hay grupos resistentes.',
   },
   biomarkers: {
-    name: 'Prueba de disfraz y vasos sanguíneos',
+    name: 'Prueba de defensas y vasos sanguíneos',
     shortName: 'Señales',
-    summary:
-      'Comprueba si el tumor se esconde de las defensas del cuerpo o si está creando nuevos vasos para alimentarse.',
+    summary: '¿Se está escondiendo de las defensas del cuerpo o pidiendo nuevos vasos?',
     revealsDescription:
-      'Ayuda a saber si la inmunoterapia (activar defensas) será una buena herramienta en este caso.',
+      'Ayuda a saber si activar las defensas (inmunoterapia) puede funcionar en este caso.',
   },
   response_monitoring: {
-    name: 'Seguimiento de respuesta en sangre',
+    name: 'Seguimiento en sangre',
     shortName: 'Seguimiento',
-    summary:
-      'Mide cómo cambiaron los distintos grupos de células después de tus decisiones anteriores.',
+    summary: '¿Están creciendo grupos de células resistentes después de las rondas anteriores?',
     revealsDescription:
-      'Avisa a tiempo si un grupo resistente empezó a crecer para poder cambiar de estrategia.',
+      'Detecta cambios recientes en los grupos de células para ajustar el tratamiento a tiempo.',
   },
 };
 
@@ -467,35 +463,35 @@ export const ONCOLOGIST_STAGE_META: Record<
   surveillance: {
     label: 'Vigilancia',
     shortBadge: 'Inicio: Vigilancia',
-    burdenPreview: '8%',
+    burdenPreview: '8/100',
     simpleDescription:
-      'Hallazgo muy pequeño y tranquilo. Vigila de cerca sin castigar al cuerpo con tratamientos innecesarios.',
+      'Hallazgo muy pequeño y de evolución lenta. Permite estudiar y vigilar sin desgastar al cuerpo innecesariamente.',
     logicDescription:
-      'Lesión incipiente de bajo riesgo con controles intactos; prioriza diagnóstico y seguimiento sin sobretratamiento.',
+      'Lesión incipiente de bajo riesgo y baja actividad; prioriza estudiar y vigilar antes de sobretratar.',
     precisionDescription:
-      'Lesión mínima localizada (carga 8%) con supresores TP53/RB1/PTEN intactos; ideal para vigilancia y detección temprana.',
+      'Lesión mínima de bajo riesgo (carga inicial 8/100) con controles celulares intactos; ideal para vigilancia y confirmación diagnóstica.',
   },
   early: {
     label: 'Cáncer temprano',
     shortBadge: 'Inicio: Cáncer temprano',
-    burdenPreview: '16%',
+    burdenPreview: '16/100',
     simpleDescription:
-      'Tumor pequeño en un solo lugar. Aún tienes varias opciones eficaces si primero estudias bien qué está pasando.',
+      'Tumor pequeño detectado a tiempo. Estudia primero qué está pasando para elegir la mejor opción.',
     logicDescription:
-      'Lesión proliferativa temprana localizada con frenos celulares aún activos y baja carga inicial.',
+      'Tumor pequeño en etapa temprana con carga inicial baja; conviene caracterizarlo antes de intervenir.',
     precisionDescription:
-      'Tumor localizado temprano (carga 16%, señal EGFR↑ basal) con supresores funcionales y alta ventana terapéutica.',
+      'Tumor pequeño en etapa temprana (carga inicial 16/100) con controles basales activos; estudia su extensión y vías antes de tratar.',
   },
   advanced: {
     label: 'Cáncer avanzado',
     shortBadge: 'Inicio: Cáncer avanzado',
-    burdenPreview: '68%',
+    burdenPreview: '68/100',
     simpleDescription:
-      'El tumor ya es grande y se ha extendido. Deberás descubrir sus puntos débiles y cuidar mucho la fuerza del paciente.',
+      'Tumor grande y muy activo. Necesitarás estudiar sus puntos débiles y cuidar la fuerza del paciente.',
     logicDescription:
-      'Enfermedad diseminada con varias subpoblaciones adaptadas y defensas debilitadas; exige estrategia sistémica cuidadosa.',
+      'Tumor en etapa avanzada con alta carga celular y varias subpoblaciones; exige equilibrio entre eficacia y bienestar.',
     precisionDescription:
-      'Enfermedad diseminada (carga 68%) con subclones PIK3CA↑/TP53✕, KRAS↑/PTEN✕ y PDL1↑/MET↑; reto clínico avanzado.',
+      'Tumor avanzado de alta actividad (carga inicial 68/100) con múltiples alteraciones; caracteriza sus vías para priorizar tratamientos y bienestar.',
   },
 };
 
@@ -532,21 +528,21 @@ export const CANCER_STRATEGY_DOOR_LABELS: Record<
   string,
   { simple?: string; logic: string; precision: string }
 > = {
-  // Unified progressive catalog IDs
-  'prob-egfr': { simple: 'Antena crecer', logic: 'Señal membrana', precision: 'Impulso EGFR↑' },
-  'prob-kras': { simple: 'Acelerador', logic: 'Señal autónoma', precision: 'Bypass KRAS↑' },
-  'prob-pik3ca': { simple: 'Más energía', logic: 'Supervivencia↑', precision: 'Eje PIK3CA↑' },
-  'prob-cdk6': { simple: 'División rápida', logic: 'Motor ciclo↑', precision: 'Quinasa CDK6↑' },
-  'prob-pten': { simple: 'Sin freno ener.', logic: 'Freno metab.✕', precision: 'Pérdida PTEN✕' },
-  'prob-cdkn2a': { simple: 'Sin seguro', logic: 'Sin freno ciclo', precision: 'Pérdida CDKN2A✕' },
-  'prob-rb1': { simple: 'Romper freno', logic: 'Sin freno G1/S', precision: 'Pérdida RB1✕' },
-  'prob-atm': { simple: 'Apagar alarma', logic: 'Sin sensor ADN', precision: 'Pérdida ATM✕' },
-  'prob-tp53': { simple: 'Sin inspector', logic: 'Sin guardián', precision: 'Pérdida TP53✕' },
-  'prob-bax': { simple: 'Sin apagado', logic: 'Sin apoptosis', precision: 'Pérdida BAX✕' },
-  'prob-bcl2': { simple: 'Escudo celular', logic: 'Escudo vida↑', precision: 'Escudo BCL2↑' },
-  'prob-vegfa': { simple: 'Nuevos vasos', logic: 'Angiogénesis↑', precision: 'Vasos VEGFA↑' },
-  'prob-pdl1': { simple: 'Disfraz inmune', logic: 'Evasión inmune', precision: 'Escape PD-L1↑' },
-  'prob-met': { simple: 'Ruta de escape', logic: 'Invasión↑', precision: 'Escape MET↑' },
+  // Unified progressive catalog IDs (<= 18 chars each, no cryptic abbreviations)
+  'prob-egfr': { simple: 'Antena sensible', logic: 'Receptor sensible', precision: 'EGFR activado' },
+  'prob-kras': { simple: 'Crecer sin señal', logic: 'Señal autónoma', precision: 'KRAS activado' },
+  'prob-pik3ca': { simple: 'Más energía', logic: 'Nutrientes y vida', precision: 'PIK3CA activado' },
+  'prob-cdk6': { simple: 'División rápida', logic: 'Ciclo acelerado', precision: 'CDK6 activado' },
+  'prob-pten': { simple: 'Sin freno energía', logic: 'Sin freno interno', precision: 'PTEN perdido' },
+  'prob-cdkn2a': { simple: 'No envejecer', logic: 'Sin senescencia', precision: 'CDKN2A perdido' },
+  'prob-rb1': { simple: 'Romper el freno', logic: 'Sin freno ciclo', precision: 'RB1 perdido' },
+  'prob-atm': { simple: 'Apagar detector', logic: 'Sin sensor ADN', precision: 'ATM perdido' },
+  'prob-tp53': { simple: 'Apagar alarma', logic: 'Sin alarma ADN', precision: 'TP53 perdido' },
+  'prob-bax': { simple: 'Sin botón retiro', logic: 'Sin ejecutor daño', precision: 'BAX perdido' },
+  'prob-bcl2': { simple: 'Escudo de vida', logic: 'Bloqueo apoptosis', precision: 'BCL2 activado' },
+  'prob-vegfa': { simple: 'Nuevos vasos', logic: 'Nuevos vasos', precision: 'VEGFA activado' },
+  'prob-pdl1': { simple: 'Disfraz inmune', logic: 'Evasión inmune', precision: 'PD-L1 activado' },
+  'prob-met': { simple: 'Ruta de escape', logic: 'Receptor alterno', precision: 'MET activado' },
 
   // Legacy scenarios
   'a-r1-founder': { logic: 'Señal membrana', precision: 'Clon EGFR↑' },
@@ -607,63 +603,64 @@ export const CANCER_STRATEGY_DOOR_LABELS: Record<
  */
 const LOGIC_TEXT_REPLACEMENTS: [RegExp, string][] = [
   [/\s*\((?:EGFR↑|KRAS↑|PIK3CA↑|CDK6↑|PTEN✕|RB1✕|TP53✕|CDKN2A✕|ATM✕|BAX✕|BCL2↑|MET↑|VEGFA↑|PD-L1↑|PDL1↑)\)/g, ''],
-  [/\(ATM\/TP53\)/g, '(sensor de daño y guardián genómico)'],
-  [/\(BAX\/BCL2\)/g, '(balance apoptótico mitocondrial)'],
-  [/\(EGFR\/KRAS\/PI3K\)/g, '(señalización mitogénica y de supervivencia)'],
-  [/\(PTEN\/RB1\)/g, '(frenos supresores del ciclo y metabolismo)'],
-  [/\bla vía PI3K\/AKT\b/gi, 'la cascada de supervivencia y metabolismo'],
-  [/\bdel eje PI3K\/AKT\b/gi, 'del eje de supervivencia y metabolismo'],
-  [/\bdel receptor EGFR\b/gi, 'del receptor mitogénico'],
-  [/\breceptor EGFR\b/gi, 'receptor mitogénico'],
-  [/\bAnti-EGFR\s*TKI\b/gi, 'bloqueo de receptor mitogénico'],
-  [/\bAnti-EGFR\b/gi, 'bloqueo de receptor mitogénico'],
-  [/\bEGFR\s*TKI\b/gi, 'bloqueo de receptor mitogénico'],
-  [/\bAnti-CDK4\/6\b/gi, 'freno del motor del ciclo'],
-  [/\bCDK4\/6\b/gi, 'motor del ciclo celular'],
-  [/\bAnti-PI3K\b/gi, 'bloqueo de supervivencia'],
-  [/\banti-PD-L1\b/gi, 'bloqueo de evasión inmune'],
-  [/\banti-PDL1\b/gi, 'bloqueo de evasión inmune'],
-  [/\bPI3K\/AKT\b/gi, 'cascada de supervivencia y metabolismo'],
-  [/\bPI3K\b/gi, 'cascada de supervivencia'],
+  [/\(ATM\/TP53\)/g, '(sensor y alarma de daño al ADN)'],
+  [/\(BAX\/BCL2\)/g, '(control de apoptosis en la mitocondria)'],
+  [/\(EGFR\/KRAS\/PI3K\)/g, '(señalización de crecimiento y supervivencia)'],
+  [/\(PTEN\/RB1\)/g, '(frenos del ciclo celular y metabolismo)'],
+  [/\bla vía PI3K\/AKT\b/gi, 'la vía de nutrientes y supervivencia'],
+  [/\bdel eje PI3K\/AKT\b/gi, 'de la vía de nutrientes y supervivencia'],
+  [/\bdel receptor EGFR\b/gi, 'del receptor de crecimiento'],
+  [/\breceptor EGFR\b/gi, 'receptor de crecimiento'],
+  [/\bAnti-EGFR\s*TKI\b/gi, 'bloqueo del receptor de crecimiento'],
+  [/\bAnti-EGFR\b/gi, 'bloqueo del receptor de crecimiento'],
+  [/\bEGFR\s*TKI\b/gi, 'bloqueo del receptor de crecimiento'],
+  [/\bAnti-CDK4\/6\b/gi, 'bloqueo del acelerador del ciclo'],
+  [/\bCDK4\/6\b/gi, 'acelerador del ciclo celular'],
+  [/\bAnti-PI3K\b/gi, 'bloqueo de la vía de supervivencia'],
+  [/\banti-PD-L1\b/gi, 'bloqueo de la señal inhibidora inmune'],
+  [/\banti-PDL1\b/gi, 'bloqueo de la señal inhibidora inmune'],
+  [/\bPI3K\/AKT\b/gi, 'vía de nutrientes y supervivencia'],
+  [/\bPI3K\b/gi, 'vía de nutrientes y supervivencia'],
   [/\bAKT\b/gi, 'señal de supervivencia'],
-  [/\bseñalización MAPK\b/gi, 'señalización mitogénica'],
-  [/\bMAPK\b/gi, 'cascada mitogénica'],
-  [/\bPD-1\/PD-L1\b/gi, 'punto de control inmune'],
+  [/\bseñalización MAPK\b/gi, 'vía interna de división'],
+  [/\bMAPK\b/gi, 'vía interna de división'],
+  [/\bPD-1\/PD-L1\b/gi, 'freno del sistema inmune'],
   [/\bPD-L1↑/g, 'evasión inmune elevada'],
   [/\bPDL1↑/g, 'evasión inmune elevada'],
-  [/\bPD-L1\b/gi, 'señal de evasión inmune'],
-  [/\bPDL1\b/gi, 'señal de evasión inmune'],
-  [/\bCD274\b/gi, 'señal de evasión inmune'],
-  [/\bEGFR↑/g, 'receptor mitogénico hiperactivo'],
-  [/\bEGFR\b/g, 'receptor mitogénico'],
-  [/\bKRAS↑/g, 'interruptor distal autónomo'],
-  [/\bKRAS\b/g, 'interruptor distal'],
-  [/\bPIK3CA↑/g, 'eje de supervivencia activado'],
-  [/\bPIK3CA\b/g, 'eje de supervivencia'],
-  [/\bPTEN✕/g, 'freno de supervivencia perdido'],
-  [/\bPTEN\b/g, 'freno de supervivencia'],
-  [/\bRB1✕/g, 'freno G1/S perdido'],
-  [/\bRB1\b/g, 'freno del ciclo G1/S'],
-  [/\bTP53✕/g, 'guardián genómico perdido'],
-  [/\bTP53\b/g, 'guardián genómico'],
-  [/\bCDK6↑/g, 'motor del ciclo hiperactivo'],
-  [/\bCDK6\b/g, 'motor del ciclo'],
-  [/\bCDKN2A✕/g, 'freno del motor perdido'],
-  [/\bCDKN2A\b/g, 'freno del motor del ciclo'],
+  [/\bPD-L1\b/gi, 'señal inhibidora inmune'],
+  [/\bPDL1\b/gi, 'señal inhibidora inmune'],
+  [/\bCD274\b/gi, 'señal inhibidora inmune'],
+  [/\bEGFR-dependientes\b/gi, 'dependientes del receptor de crecimiento'],
+  [/\bEGFR↑/g, 'receptor de crecimiento hiperactivo'],
+  [/\bEGFR\b/g, 'receptor de crecimiento'],
+  [/\bKRAS↑/g, 'vía interna de división autónoma'],
+  [/\bKRAS\b/g, 'vía interna de división'],
+  [/\bPIK3CA↑/g, 'vía de nutrientes y supervivencia activa'],
+  [/\bPIK3CA\b/g, 'vía de nutrientes y supervivencia'],
+  [/\bPTEN✕/g, 'freno interno de supervivencia perdido'],
+  [/\bPTEN\b/g, 'freno interno de supervivencia'],
+  [/\bRB1✕/g, 'freno del ciclo celular perdido'],
+  [/\bRB1\b/g, 'freno del ciclo celular'],
+  [/\bTP53✕/g, 'alarma de daño al ADN perdida'],
+  [/\bTP53\b/g, 'alarma de daño al ADN'],
+  [/\bCDK6↑/g, 'acelerador del ciclo hiperactivo'],
+  [/\bCDK6\b/g, 'acelerador del ciclo celular'],
+  [/\bCDKN2A✕/g, 'freno de envejecimiento perdido'],
+  [/\bCDKN2A\b/g, 'freno de envejecimiento celular'],
   [/\bATM✕/g, 'sensor de daño al ADN inactivo'],
   [/\bATM\b/g, 'sensor de daño al ADN'],
-  [/\bBAX✕/g, 'efector apoptótico perdido'],
-  [/\bBAX\b/g, 'efector apoptótico'],
-  [/\bBCL2↑/g, 'escudo anti-apoptótico elevado'],
-  [/\bBCL2\b/g, 'escudo anti-apoptótico'],
-  [/\bMET↑/g, 'vía paralela de invasión'],
-  [/\bMET\b/g, 'receptor paralelo de invasión'],
-  [/\bVEGFA↑/g, 'señal angiogénica elevada'],
-  [/\bVEGFA\b/g, 'señal de angiogénesis'],
-  [/\bMYC\b/g, 'amplificador proliferativo'],
+  [/\bBAX✕/g, 'ejecutor de apoptosis perdido'],
+  [/\bBAX\b/g, 'ejecutor de apoptosis'],
+  [/\bBCL2↑/g, 'bloqueo de apoptosis elevado'],
+  [/\bBCL2\b/g, 'bloqueador de apoptosis'],
+  [/\bMET↑/g, 'receptor alterno de invasión activo'],
+  [/\bMET\b/g, 'receptor alterno de invasión'],
+  [/\bVEGFA↑/g, 'señal de nuevos vasos elevada'],
+  [/\bVEGFA\b/g, 'señal de nuevos vasos'],
+  [/\bMYC\b/gi, 'amplificador de crecimiento'],
   [/\bRTK\b/g, 'receptor de membrana'],
-  [/\(NGS\)/g, '(análisis funcional)'],
-  [/\bNGS\b/g, 'análisis funcional'],
+  [/\(NGS\)/g, '(análisis molecular)'],
+  [/\bNGS\b/g, 'análisis molecular'],
   [/\bTKI\b/g, 'bloqueador dirigido'],
 ];
 
@@ -958,6 +955,462 @@ export function getCancerDoorShortLabel(
   return formatted.length > 16 ? formatted.slice(0, 16).trim() : formatted;
 }
 
+interface StrategyLevelCopy {
+  title: string;
+  effect: string;
+  cost: string;
+}
+
+const CANCER_STRATEGY_3LEVEL_COPY: Record<
+  string,
+  Record<MolecularDetailMode, StrategyLevelCopy>
+> = {
+  'prob-egfr': {
+    simple: {
+      title: 'Hacer que la célula reaccione más fuerte a la señal de crecer',
+      effect: 'Se multiplica más rápido mientras el tejido envíe la señal, gastando poca energía.',
+      cost: 'Si la señal del tejido desaparece, vuelve a frenarse.',
+    },
+    logic: {
+      title: 'Aumentar la respuesta del receptor a una señal externa',
+      effect: 'Acelera la división mientras haya señal externa disponible, con bajo gasto energético inicial.',
+      cost: 'Sigue dependiendo de una señal externa y de superar los frenos del ciclo celular.',
+    },
+    precision: {
+      title: 'Amplificar el receptor de membrana EGFR',
+      effect: 'EGFR capta factores de crecimiento externos con mayor sensibilidad y activa vías de división con bajo costo inicial.',
+      cost: 'Aún depende de estímulo externo (ligando) y de superar los puntos de control (RB1/TP53).',
+    },
+  },
+  'prob-kras': {
+    simple: {
+      title: 'Seguir dividiéndose aunque deje de recibir la señal',
+      effect: 'La célula mantiene activa su orden de multiplicarse incluso sin señales del tejido.',
+      cost: 'Consume mucha energía y puede dañar su ADN al copiarse demasiado rápido.',
+    },
+    logic: {
+      title: 'Mantener activa la señal de división aunque falte el estímulo externo',
+      effect: 'La vía que estimula la división permanece activa aunque el receptor deje de recibir la señal externa.',
+      cost: 'Eleva el consumo de glucosa y el estrés al copiar el ADN, lo que puede activar alarmas de daño.',
+    },
+    precision: {
+      title: 'Activar KRAS para señalización autónoma (vía MAPK)',
+      effect: 'KRAS mantiene encendida la cascada proliferativa distal aunque el receptor EGFR no reciba señal externa.',
+      cost: 'Incrementa el estrés replicativo y la demanda de glucosa y oxígeno.',
+    },
+  },
+  'prob-pik3ca': {
+    simple: {
+      title: 'Aprovechar mejor el alimento y resistir el apagado celular',
+      effect: 'Ayuda a la célula a sobrevivir cuando hay poco espacio o mucho desgaste al dividirse.',
+      cost: 'Necesita suministro constante de nutrientes; si faltan, se agota más rápido.',
+    },
+    logic: {
+      title: 'Aumentar la captación de nutrientes y resistir señales de apoptosis',
+      effect: 'Mejora el uso de glucosa y ayuda a sobrevivir aunque haya estrés por división rápida.',
+      cost: 'Depende de un suministro continuo de nutrientes y exige alto consumo energético.',
+    },
+    precision: {
+      title: 'Activar PIK3CA en la vía PI3K/AKT',
+      effect: 'PIK3CA impulsa la captación de glucosa y señales de supervivencia que elevan el umbral de apoptosis.',
+      cost: 'Aumenta la demanda metabólica sostenida y la fragilidad ante falta de nutrientes.',
+    },
+  },
+  'prob-cdk6': {
+    simple: {
+      title: 'Acelerar el ritmo al que la célula se divide',
+      effect: 'Reduce la espera entre una división y la siguiente para formar más células en menos tiempo.',
+      cost: 'Si los frenos naturales del tejido siguen funcionando, todavía pueden detenerla.',
+    },
+    logic: {
+      title: 'Acelerar el paso a la fase de división del ciclo celular',
+      effect: 'Acorta la pausa previa a duplicar el ADN y expande la población más rápido.',
+      cost: 'Si el freno principal del ciclo sigue intacto, las señales de detención aún pueden frenarla.',
+    },
+    precision: {
+      title: 'Hiperactivar la quinasa CDK6 del ciclo celular',
+      effect: 'CDK6 fosforila e inactiva parcialmente a RB1, acelerando la transición G1/S hacia la división.',
+      cost: 'Sigue limitada si RB1 y los controles de daño al ADN permanecen funcionales.',
+    },
+  },
+  'prob-pten': {
+    simple: {
+      title: 'Quitar el freno interno del consumo de energía',
+      effect: 'Mantiene encendidas las señales de supervivencia incluso cuando bajan las señales del tejido.',
+      cost: 'Gasta mucha energía de base y agota rápido los recursos del entorno.',
+    },
+    logic: {
+      title: 'Eliminar el freno interno de la vía de crecimiento y supervivencia',
+      effect: 'Deja encendida la señal de supervivencia y reduce la apoptosis aunque falte señal del receptor.',
+      cost: 'Sube el gasto energético basal y acelera el agotamiento de nutrientes locales.',
+    },
+    precision: {
+      title: 'Inactivar el supresor PTEN (freno de PI3K/AKT)',
+      effect: 'Sin la fosfatasa PTEN, la señal PI3K/AKT queda desinhibida y sostiene la supervivencia celular.',
+      cost: 'Aumenta el gasto energético basal y la sensibilidad a falta prolongada de oxígeno.',
+    },
+  },
+  'prob-rb1': {
+    simple: {
+      title: 'Romper el freno principal que detiene la división',
+      effect: 'La célula sigue multiplicándose incluso cuando el tejido vecino le ordena parar.',
+      cost: 'Dividirse sin pausa produce más errores en el ADN y puede disparar alarmas internas.',
+    },
+    logic: {
+      title: 'Inactivar el freno principal del ciclo celular',
+      effect: 'Ignora las señales de detención del tejido vecino y mantiene abierta la entrada al ciclo celular.',
+      cost: 'Aumenta los errores al replicar el ADN y el estrés celular.',
+    },
+    precision: {
+      title: 'Inactivar el supresor RB1 (punto de control G1/S)',
+      effect: 'Perder RB1 elimina el freno principal de entrada a la fase S frente a señales antiproliferativas.',
+      cost: 'Eleva el estrés replicativo y activa respuestas de daño al ADN si TP53 sigue activo.',
+    },
+  },
+  'prob-tp53': {
+    simple: {
+      title: 'Apagar la alarma que revisa si el ADN está dañado',
+      effect: 'La célula sigue viva y dividiéndose aunque acumule errores graves en su interior.',
+      cost: 'Tantos errores crean marcas anormales que facilitan que las defensas la reconozcan.',
+    },
+    logic: {
+      title: 'Anular la alarma principal ante daño en el ADN',
+      effect: 'Impide detener el ciclo celular o activar la apoptosis cuando el ADN acumula daños.',
+      cost: 'Genera más alteraciones anómalas que hacen a la célula más visible para los linfocitos T.',
+    },
+    precision: {
+      title: 'Inactivar TP53 (guardián de respuesta al daño del ADN)',
+      effect: 'Sin p53, el daño genómico ya no induce arresto del ciclo ni apoptosis intrínseca eficaz.',
+      cost: 'Aumenta la inestabilidad genómica y la carga de neoantígenos visibles para linfocitos T.',
+    },
+  },
+  'prob-cdkn2a': {
+    simple: {
+      title: 'Quitar el límite de envejecimiento de la célula',
+      effect: 'Permite seguir multiplicándose muchas veces sin entrar en reposo permanente.',
+      cost: 'Exige más alimento y acumula desgaste en el ADN tras tantas divisiones.',
+    },
+    logic: {
+      title: 'Suprimir el freno de envejecimiento celular',
+      effect: 'Evita que la célula entre en senescencia tras muchas divisiones o estrés proliferativo.',
+      cost: 'Aumenta la necesidad de nutrientes y la exposición a daños acumulados en el ADN.',
+    },
+    precision: {
+      title: 'Inactivar CDKN2A (reguladores p16 y p14ARF)',
+      effect: 'Anula el freno de senescencia que bloquea CDK4/6 y estabiliza la respuesta de p53.',
+      cost: 'Sostiene divisiones prolongadas a costa de mayor fragilidad ante hipoxia y daño al ADN.',
+    },
+  },
+  'prob-atm': {
+    simple: {
+      title: 'Desactivar el detector temprano de roturas en el ADN',
+      effect: 'Evita que la célula se detenga de inmediato cuando aparecen daños al copiarse.',
+      cost: 'Deja errores sin reparar y vuelve a la célula más llamativa para las defensas.',
+    },
+    logic: {
+      title: 'Desactivar el sensor temprano de roturas en el ADN',
+      effect: 'Retrasa la alerta que detiene el ciclo celular ante roturas durante la división.',
+      cost: 'Incrementa la inestabilidad del ADN y la exposición de señales anómalas ante el sistema inmune.',
+    },
+    precision: {
+      title: 'Inactivar la quinasa ATM (sensor de roturas del ADN)',
+      effect: 'Impide activar con rapidez a TP53 y la reparación ante roturas de doble cadena.',
+      cost: 'Eleva la inestabilidad cromosómica y la visibilidad frente a vigilancia inmune.',
+    },
+  },
+  'prob-bax': {
+    simple: {
+      title: 'Desconectar el botón de apagado seguro de la célula',
+      effect: 'La célula sobrevive incluso cuando recibe señales internas fuertes para apagarse.',
+      cost: 'No la hace crecer más rápido y sigue siendo vulnerable al ataque directo de las defensas.',
+    },
+    logic: {
+      title: 'Inactivar el ejecutor de la muerte celular programada',
+      effect: 'Bloquea el paso final de la apoptosis desde la mitocondria aunque exista daño interno.',
+      cost: 'Aporta poco impulso a la división y no frena la destrucción por linfocitos T.',
+    },
+    precision: {
+      title: 'Inactivar BAX (ejecutor mitocondrial de apoptosis)',
+      effect: 'Sin BAX, la señal de daño al ADN no logra perforar la mitocondria ni ejecutar la apoptosis.',
+      cost: 'No acelera la mitosis ni impide la citotoxicidad extrínseca por linfocitos T.',
+    },
+  },
+  'prob-bcl2': {
+    simple: {
+      title: 'Levantar un escudo para evitar el apagado celular',
+      effect: 'Mantiene vivas a las células aunque falten nutrientes o haya daño interno grave.',
+      cost: 'Hace que se dividan un poco más despacio y gasten energía en mantener ese escudo.',
+    },
+    logic: {
+      title: 'Bloquear la apoptosis desde la mitocondria',
+      effect: 'Eleva el umbral necesario para que la célula muera frente a daño grave o falta de nutrientes.',
+      cost: 'Reduce ligeramente la velocidad de división y exige energía de mantenimiento.',
+    },
+    precision: {
+      title: 'Sobreexpresar BCL2 (bloqueador antiapoptótico)',
+      effect: 'BCL2 secuestra proteínas proapoptóticas como BAX en la mitocondria y frena la apoptosis intrínseca.',
+      cost: 'Disminuye la tasa proliferativa basal y mantiene exposición a la respuesta inmune.',
+    },
+  },
+  'prob-met': {
+    simple: {
+      title: 'Activar una ruta alterna para crecer e invadir tejidos vecinos',
+      effect: 'Permite seguir creciendo por otro camino y moverse fuera de los límites del tejido.',
+      cost: 'Gasta mucha energía; funciona mal si escasean oxígeno y alimento.',
+    },
+    logic: {
+      title: 'Activar un receptor alterno que impulsa división y migración',
+      effect: 'Abre una segunda vía de señalización y facilita invadir tejidos vecinos.',
+      cost: 'Tiene un alto costo energético y compite mal cuando faltan oxígeno y glucosa.',
+    },
+    precision: {
+      title: 'Amplificar el receptor alterno MET (vía HGF/MET)',
+      effect: 'MET reactiva señalización paralela hacia PI3K/MAPK y promueve motilidad e invasión tisular.',
+      cost: 'Exige alto consumo metabólico bajo restricción de oxígeno y glucosa.',
+    },
+  },
+  'prob-vegfa': {
+    simple: {
+      title: 'Enviar señales para atraer nuevos vasos sanguíneos',
+      effect: 'Lleva más oxígeno y alimento hacia las zonas internas del tumor cuando crece.',
+      cost: 'Esos mismos vasos facilitan que lleguen células de defensa al tumor.',
+    },
+    logic: {
+      title: 'Liberar señales para atraer nuevos vasos sanguíneos',
+      effect: 'Aumenta el aporte de oxígeno y nutrientes hacia las zonas con mayor consumo energético.',
+      cost: 'Los vasos nuevos también facilitan la entrada de linfocitos del sistema inmune.',
+    },
+    precision: {
+      title: 'Activar señal angiogénica VEGFA',
+      effect: 'VEGFA induce formación de nuevos vasos locales para aliviar hipoxia y escasez de nutrientes.',
+      cost: 'La vasculatura permeable incrementa la infiltración de linfocitos inmunes.',
+    },
+  },
+  'prob-pdl1': {
+    simple: {
+      title: 'Poner un disfraz que frena a las defensas del cuerpo',
+      effect: 'Reduce el ataque de las células de defensa cuando estas vigilan el tejido.',
+      cost: 'Gasta energía extra y casi no ayuda a multiplicarse más rápido.',
+    },
+    logic: {
+      title: 'Mostrar una señal inhibidora que frena a los linfocitos T',
+      effect: 'Reduce la eliminación del tumor cuando hay vigilancia inmune activa en el tejido.',
+      cost: 'Consume recursos energéticos y aporta muy poco impulso directo a la división.',
+    },
+    precision: {
+      title: 'Expresar PD-L1 (CD274) en la membrana celular',
+      effect: 'PD-L1 se une a PD-1 en linfocitos T citotóxicos e inhibe su respuesta de eliminación.',
+      cost: 'Implica costo metabólico continuo y bajo impacto directo sobre la velocidad mitótica.',
+    },
+  },
+};
+
+export function getCancerStrategyDisplayInfo(
+  strategy: CancerStrategyOption,
+  detail: MolecularDetailMode
+): StrategyLevelCopy {
+  const problemId = strategy.problemMutation?.id ?? strategy.id.replace(/^r\d+-/, '');
+  const entry = CANCER_STRATEGY_3LEVEL_COPY[problemId];
+  if (entry) {
+    return entry[detail];
+  }
+  return {
+    title: formatBiologyText(strategy.label, detail),
+    effect: formatBiologyText(strategy.advantage, detail),
+    cost: formatBiologyText(strategy.cost, detail),
+  };
+}
+
+export interface OncologistFindingItem {
+  label: string;
+  value: string;
+}
+
+export interface OncologistFindingsSummary {
+  items: OncologistFindingItem[];
+  interventionGuidance: string;
+}
+
+/**
+ * Summarizes what the Oncologist has already discovered from completed studies
+ * and translates those findings into actionable guidance for the Intervention round.
+ */
+export function getOncologistFindingsSummary(
+  state: SimulationState,
+  detail: MolecularDetailMode
+): OncologistFindingsSummary {
+  const items: OncologistFindingItem[] = [];
+  const dominant = state.clones.reduce((a, b) => (b.share > a.share ? b : a), state.clones[0]);
+
+  // 1. Extent (only shown as known if revealedExtent is true!)
+  if (state.revealedExtent) {
+    const extentLabel =
+      state.clinical.diseaseExtent === 'localizada'
+        ? detail === 'simple'
+          ? 'En un solo sitio (localizada)'
+          : 'Localizada'
+        : state.clinical.diseaseExtent === 'regional'
+          ? detail === 'simple'
+            ? 'Extendida a tejidos cercanos (regional)'
+            : 'Regional'
+          : detail === 'simple'
+            ? 'Extendida a varias zonas (diseminada)'
+            : 'Diseminada';
+    items.push({ label: 'Extensión confirmada', value: extentLabel });
+  } else {
+    items.push({
+      label: 'Extensión',
+      value:
+        detail === 'simple'
+          ? 'Sin confirmar (se averigua con Estudio de imágenes)'
+          : 'Sin definir (requiere Estudio de imágenes)',
+    });
+  }
+
+  // 2. Revealed pathways / genes
+  if (state.revealedGenes.length > 0) {
+    const altered: string[] = [];
+    const intact: string[] = [];
+    for (const sym of state.revealedGenes) {
+      const st = dominant.genotype[sym];
+      const name =
+        detail === 'precision'
+          ? sym
+          : detail === 'simple'
+            ? GENE_TO_SIMPLE_MAP[sym]?.shortTitle ?? sym
+            : GENE_TO_PROCESS_MAP[sym]?.shortTitle ?? sym;
+      if (st === 'activated' || st === 'inactivated') {
+        altered.push(
+          detail === 'precision'
+            ? `${sym}${st === 'activated' ? '↑' : '✕'}`
+            : `${name} (${st === 'activated' ? 'activo' : 'perdido'})`
+        );
+      } else if (st === 'functional') {
+        intact.push(name);
+      }
+    }
+    if (altered.length > 0) {
+      items.push({
+        label: detail === 'simple' ? 'Cambios detectados' : 'Alteraciones detectadas',
+        value: altered.slice(0, 4).join(', '),
+      });
+    } else if (intact.length > 0) {
+      items.push({
+        label: detail === 'simple' ? 'Frenos revisados' : 'Controles evaluados',
+        value:
+          detail === 'simple'
+            ? `Siguen funcionando (${intact.slice(0, 3).join(', ')})`
+            : `Funcionales (${intact.slice(0, 3).join(', ')})`,
+      });
+    }
+  }
+
+  // 3. Clonal subpopulations
+  if (state.revealedClonalHeterogeneity) {
+    items.push({
+      label: detail === 'simple' ? 'Grupos de células' : 'Composición clonal',
+      value: `${state.clones.length} grupos (principal: ${dominant.share}% de la población)`,
+    });
+  }
+
+  // 4. Immune / vascular biomarkers
+  if (state.revealedBiomarkers) {
+    const hasPdl1 = state.clones.some((c) => c.share >= 12 && c.genotype.PDL1 === 'activated');
+    const hasVegf = state.clones.some((c) => c.share >= 12 && c.genotype.VEGFA === 'activated');
+    items.push({
+      label: detail === 'simple' ? 'Defensas y vasos' : 'Biomarcadores',
+      value: hasPdl1
+        ? detail === 'simple'
+          ? 'El tumor usa disfraz frente a las defensas'
+          : detail === 'precision'
+            ? 'PD-L1 elevado (favorable a inmunoterapia)'
+            : 'Señal inhibidora inmune elevada'
+        : hasVegf
+          ? detail === 'simple'
+            ? 'Bajo disfraz inmune; está atrayendo nuevos vasos'
+            : detail === 'precision'
+              ? 'PD-L1 bajo; VEGFA elevado'
+              : 'Evasión inmune baja; señal vascular activa'
+          : detail === 'simple'
+            ? 'Sin disfraz inmune elevado por ahora'
+            : detail === 'precision'
+              ? 'PD-L1 y VEGFA en nivel basal'
+              : 'Evasión inmune y señal vascular bajas',
+    });
+  }
+
+  // Build concise intervention guidance from what has actually been discovered
+  const hints: string[] = [];
+  if (state.revealedExtent) {
+    if (state.clinical.diseaseExtent === 'localizada') {
+      hints.push(
+        detail === 'simple'
+          ? 'Como el tumor está en un solo sitio, cirugía o radioterapia pueden reducirlo directamente.'
+          : 'Al estar localizado, opciones locales como cirugía o radioterapia son viables.'
+      );
+    } else if (state.clinical.diseaseExtent === 'diseminada') {
+      hints.push(
+        detail === 'simple'
+          ? 'Como ya se extendió, una cirugía local sola no basta; conviene un tratamiento que actúe en todo el cuerpo.'
+          : 'Al estar diseminado, se requiere una intervención sistémica y cuidar la tolerancia del paciente.'
+      );
+    }
+  }
+  if (state.revealedBiomarkers) {
+    const hasPdl1 = state.clones.some((c) => c.share >= 12 && c.genotype.PDL1 === 'activated');
+    if (hasPdl1) {
+      hints.push(
+        detail === 'simple'
+          ? 'El disfraz frente a las defensas indica que la inmunoterapia puede ser eficaz.'
+          : detail === 'precision'
+            ? 'La expresión de PD-L1 respalda considerar inmunoterapia.'
+            : 'La señal inhibidora inmune respalda considerar inmunoterapia.'
+      );
+    }
+  }
+  if (state.revealedGenes.includes('EGFR') || state.revealedGenes.includes('KRAS')) {
+    const krasActive = state.clones.some((c) => c.share >= 15 && c.genotype.KRAS === 'activated');
+    const egfrActive = state.clones.some((c) => c.share >= 15 && c.genotype.EGFR === 'activated');
+    if (krasActive) {
+      hints.push(
+        detail === 'simple'
+          ? 'Hay células con acelerador interno propio: apagar solo la antena externa no las detendrá.'
+          : detail === 'precision'
+            ? 'KRAS activado reduce la eficacia de bloquear solo EGFR.'
+            : 'La vía interna autónoma reduce la eficacia de bloquear solo el receptor de membrana.'
+      );
+    } else if (egfrActive) {
+      hints.push(
+        detail === 'simple'
+          ? 'El tumor depende de su antena externa: bloquearla puede frenarlo con poco desgaste.'
+          : detail === 'precision'
+            ? 'La dependencia de EGFR sin KRAS activo favorece una terapia dirigida anti-EGFR.'
+            : 'La dependencia del receptor de crecimiento favorece bloquear esa vía con baja toxicidad.'
+      );
+    }
+  }
+  if (state.clinical.cumulativeToxicity >= 40) {
+    hints.push(
+      detail === 'simple'
+        ? 'El desgaste acumulado es alto: considera observar o elegir una opción más suave.'
+        : 'La toxicidad acumulada es alta: valora pausar en observación o reducir intensidad.'
+    );
+  }
+
+  const interventionGuidance =
+    hints.length > 0
+      ? hints.slice(0, 2).join(' ')
+      : state.completedDiagnostics.length === 0
+        ? detail === 'simple'
+          ? 'Aún no has hecho estudios. Decidir ahora implica actuar con poca información sobre el tumor.'
+          : 'Aún no cuentas con estudios previos. Puedes intervenir o mantener observación hasta el próximo estudio.'
+        : detail === 'simple'
+          ? 'Compara qué mecanismo ataca cada tratamiento y cuánto desgaste produce en el paciente.'
+          : 'Relaciona los hallazgos confirmados con el mecanismo y la toxicidad de cada intervención.';
+
+  return { items, interventionGuidance };
+}
+
 /**
  * Generates a warm, crystal-clear everyday Spanish summary of the live game state
  * for novice audiences when "Modo Simple" is active.
@@ -988,7 +1441,9 @@ export function describeCurrentSituationSimple(state: SimulationState): string {
     return 'El paciente siente el desgaste de los tratamientos. Conviene descansar con Observación o elegir opciones más suaves para recuperar fuerzas.';
   }
   if (burden >= 60) {
-    return 'El tumor está muy activo y extendido. Usa estudios para detectar sus puntos débiles y combina terapias con cuidado del bienestar.';
+    return state.revealedExtent
+      ? 'El tumor está muy activo y extendido. Usa estudios para detectar sus puntos débiles y combina tratamientos con cuidado del bienestar.'
+      : 'El tumor está muy activo y tiene carga alta. Usa estudios para conocer su extensión y puntos débiles cuidando el bienestar.';
   }
   if (state.completedDiagnostics.length === 0) {
     return 'Todavía no conoces por dentro cómo funciona este tumor. Hacer un estudio diagnóstico te dará pistas clave antes de tratar.';
@@ -1105,28 +1560,28 @@ export function getModelFieldOptions(detail: MolecularDetailMode): {
 
   return {
     drivers: [
-      { value: 'EGFR', label: 'Receptor mitogénico de membrana hiperactivo' },
-      { value: 'KRAS', label: 'Interruptor distal autónomo de proliferación' },
+      { value: 'EGFR', label: 'Receptor de crecimiento de membrana hiperactivo' },
+      { value: 'KRAS', label: 'Vía interna de señalización autónoma de división' },
       { value: 'PIK3CA', label: 'Cascada de supervivencia y metabolismo activada' },
       { value: 'CDK6', label: 'Motor de entrada al ciclo celular acelerado' },
     ],
     weakened: [
-      { value: 'PTEN', label: 'Freno lipídico de supervivencia perdido' },
-      { value: 'RB1', label: 'Freno del punto de control G1/S perdido' },
-      { value: 'TP53', label: 'Guardián del daño genómico inactivo' },
+      { value: 'PTEN', label: 'Freno de la vía de supervivencia perdido' },
+      { value: 'RB1', label: 'Freno del punto de control del ciclo perdido' },
+      { value: 'TP53', label: 'Control de daño al ADN inactivo' },
       { value: 'BAX', label: 'Efector de muerte celular programada perdido' },
     ],
     intact: [
-      { value: 'TP53', label: 'Guardián del daño genómico aún funcional' },
-      { value: 'RB1', label: 'Freno del punto de control G1/S aún funcional' },
+      { value: 'TP53', label: 'Control de daño al ADN aún funcional' },
+      { value: 'RB1', label: 'Freno del punto de control del ciclo aún funcional' },
       { value: 'PTEN', label: 'Freno de supervivencia aún funcional' },
       { value: 'BAX', label: 'Efector de apoptosis aún funcional' },
     ],
     vulnerabilities: [
-      { value: 'egfr_tki', label: 'Dependencia de señal de membrana (Bloqueo de receptor)' },
-      { value: 'cdk46_inhibitor', label: 'Motor del ciclo con freno G1/S intacto (Freno del ciclo)' },
-      { value: 'pi3k_inhibitor', label: 'Dependencia de supervivencia metabólica (Bloqueo supervivencia)' },
-      { value: 'chemotherapy', label: 'Proliferación rápida con apoptosis intacta (Citotóxica)' },
+      { value: 'egfr_tki', label: 'Dependencia de señal externa (Bloqueo del receptor)' },
+      { value: 'cdk46_inhibitor', label: 'Motor del ciclo con freno intacto (Freno del ciclo)' },
+      { value: 'pi3k_inhibitor', label: 'Dependencia de supervivencia metabólica (Bloqueo de supervivencia)' },
+      { value: 'chemotherapy', label: 'División rápida con apoptosis intacta (Citotóxica)' },
       { value: 'immunotherapy', label: 'Evasión inmune reversible (Inmunoterapia)' },
     ],
   };

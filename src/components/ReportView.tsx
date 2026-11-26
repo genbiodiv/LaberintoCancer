@@ -144,14 +144,16 @@ export const ReportView: React.FC<ReportViewProps> = ({
             </div>
           </div>
 
-          {/* Progression Strip: Baseline Cell -> Each Round -> Final Cancer Rate (%) */}
+          {/* Progression Strip: Baseline -> Each Round -> Final Tumor Burden */}
           <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="font-semibold text-slate-900 dark:text-slate-100">
-                Evolución de la tasa de cáncer (de la célula inicial al desenlace)
+                {molecularDetail === 'simple'
+                  ? 'Evolución del tamaño del tumor (del inicio al desenlace)'
+                  : 'Evolución de la carga tumoral (del inicio al desenlace)'}
               </span>
               <span className="font-mono font-bold text-slate-900 dark:text-white tabular-nums">
-                Tasa final: {state.clinical.tumorBurden}%
+                Carga final: {state.clinical.tumorBurden}/100
               </span>
             </div>
 
@@ -171,7 +173,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                               : 'text-sky-700 dark:text-sky-400'
                       }`}
                     >
-                      {step.rate}%
+                      {step.rate}/100
                     </div>
                   </div>
                   {idx < progressionSteps.length - 1 && (
@@ -186,29 +188,41 @@ export const ReportView: React.FC<ReportViewProps> = ({
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {state.mode === 'oncologist' ? 'Liberación alcanzada' : 'Tasa final de cáncer'}
+                {state.mode === 'oncologist'
+                  ? 'Progreso de la partida'
+                  : molecularDetail === 'simple'
+                    ? 'Tamaño final del tumor'
+                    : 'Carga tumoral final'}
               </div>
               <div className="text-2xl font-mono font-bold text-slate-900 dark:text-white tabular-nums mt-0.5">
                 {state.mode === 'oncologist'
                   ? `${state.oncologistLiberation ?? 100}%`
-                  : `${state.clinical.tumorBurden}%`}
+                  : `${state.clinical.tumorBurden}/100`}
               </div>
             </div>
             <div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {state.mode === 'oncologist' ? 'Bienestar del paciente' : 'Integridad del tejido'}
+                {state.mode === 'oncologist'
+                  ? molecularDetail === 'simple'
+                    ? 'Bienestar del paciente'
+                    : 'Calidad de vida'
+                  : 'Integridad del tejido'}
               </div>
               <div className="text-2xl font-mono font-bold text-slate-900 dark:text-white tabular-nums mt-0.5">
-                {state.clinical.qualityOfLife}%
+                {state.clinical.qualityOfLife}/100
               </div>
             </div>
             <div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {state.mode === 'oncologist' ? 'Efectos secundarios' : 'Alteraciones acumuladas'}
+                {state.mode === 'oncologist'
+                  ? molecularDetail === 'simple'
+                    ? 'Desgaste acumulado'
+                    : 'Toxicidad acumulada'
+                  : 'Alteraciones acumuladas'}
               </div>
               <div className="text-2xl font-mono font-bold text-slate-900 dark:text-white tabular-nums mt-0.5">
                 {state.mode === 'oncologist'
-                  ? `${state.clinical.cumulativeToxicity}%`
+                  ? `${state.clinical.cumulativeToxicity}/100`
                   : state.accumulatedProblems.length}
               </div>
             </div>
@@ -307,7 +321,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                 >
                   <span>{getHallmarkDisplayInfo(h, molecularDetail).name}</span>
                   <span className="font-mono tabular-nums text-slate-900 dark:text-white">
-                    {state.hallmarkScores[h.id]}%
+                    {state.hallmarkScores[h.id]}/100
                   </span>
                 </div>
               ))}

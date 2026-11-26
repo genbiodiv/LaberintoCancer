@@ -1161,7 +1161,7 @@ export function resolveCancerTurn(
   );
 
   const dominantAfter = normalizedClones.reduce((a, b) => (b.share > a.share ? b : a));
-  const whatHappened = `Frente a la barrera "${round.title}", la competencia clonal y las defensas fisiológicas del organismo desplazaron la composición hacia ${dominantAfter.name} (${dominantAfter.share}%), con un cambio neto de carga tumoral de ${burdenShift >= 0 ? '+' : ''}${burdenShift}%.`;
+  const whatHappened = `Frente a la barrera "${round.title}", la competencia clonal y las defensas fisiológicas del organismo desplazaron la composición hacia ${dominantAfter.name} (${dominantAfter.share}%), con un cambio neto de carga tumoral de ${burdenShift >= 0 ? '+' : ''}${burdenShift} puntos.`;
 
   const cellularProcessChanged =
     round.barrierType === 'dna_damage'
@@ -1208,8 +1208,8 @@ export function resolveCancerTurn(
   if (isLastRound) {
     if (state.unlimitedMode && nextClinical.tumorBurden >= 100) {
       outcomeCode = 'expansion_tumoral';
-      outcomeTitle = '100% de cáncer alcanzado · Colonización total';
-      outcomeExplanation = `Recorriste ${state.currentRound} rondas del laberinto acumulando alteraciones hasta superar las barreras fisiológicas del organismo y alcanzar el 100% de expansión tumoral.`;
+      outcomeTitle = 'Carga tumoral al 100% · Expansión completa';
+      outcomeExplanation = `Recorriste ${state.currentRound} rondas acumulando alteraciones hasta superar las barreras del tejido y llevar la carga tumoral a 100/100.`;
     } else if (nextClinical.tumorBurden <= 12) {
       outcomeCode = 'poblacion_eliminada';
       outcomeTitle = 'Población contenida o eliminada';
@@ -1560,8 +1560,8 @@ export function resolveOncologistTurn(
   if (isLastRound) {
     if (state.unlimitedMode && nextLiberation >= 100) {
       outcomeCode = 'remision_simulada';
-      outcomeTitle = '100% de liberación alcanzado · Tumor erradicado';
-      outcomeExplanation = `Recorriste ${state.currentRound} rondas del laberinto adaptando tus decisiones terapéuticas y protegiendo al paciente hasta alcanzar el 100% de liberación tumoral.`;
+      outcomeTitle = 'Control tumoral completo · Progreso al 100%';
+      outcomeExplanation = `Recorriste ${state.currentRound} rondas ajustando tus decisiones a los hallazgos del tumor y protegiendo al paciente hasta completar el control tumoral simulado.`;
     } else if (criticalDecline) {
       outcomeCode = 'deterioro_clinico';
       outcomeTitle = 'Deterioro clínico por toxicidad o progresión';
@@ -1670,9 +1670,9 @@ export function resolveOncologistDiagnosticTurn(
   switch (tool.id) {
     case 'imaging': {
       revealedExtent = true;
-      findingDetail = `Las imágenes caracterizaron una enfermedad ${state.clinical.diseaseExtent} con tasa tumoral actual de ${state.clinical.tumorBurden}% y actividad metabólica localizada en los focos principales.`;
+      findingDetail = `Las imágenes confirman una enfermedad ${state.clinical.diseaseExtent} con carga tumoral actual de ${state.clinical.tumorBurden}/100.`;
       cellularProcessChanged =
-        'Evaluación anatómica de masa tumoral, límites tisulares locales y extensión regional/diseminada.';
+        'Evaluación anatómica del tamaño del tumor y de su extensión (localizada, regional o diseminada).';
       genesInvolved.add('VEGFA');
       genesInvolved.add('MET');
       break;
@@ -1810,8 +1810,8 @@ export function resolveOncologistDiagnosticTurn(
   if (isLastRound) {
     if (state.unlimitedMode && nextLiberation >= 100) {
       outcomeCode = 'remision_simulada';
-      outcomeTitle = '100% de liberación alcanzado · Tumor erradicado';
-      outcomeExplanation = `Recorriste ${state.currentRound} rondas alternando diagnóstico e intervención con precisión molecular hasta alcanzar el 100% de liberación tumoral.`;
+      outcomeTitle = 'Control tumoral completo · Progreso al 100%';
+      outcomeExplanation = `Recorriste ${state.currentRound} rondas alternando estudios e intervenciones hasta completar el control tumoral simulado.`;
     } else {
       outcomeCode = nextClinical.tumorBurden <= 32 ? 'control_sostenido' : 'enfermedad_activa';
       outcomeTitle =
@@ -1819,11 +1819,11 @@ export function resolveOncologistDiagnosticTurn(
           ? 'Control sostenido de la enfermedad'
           : 'Ciclo completado con enfermedad activa';
       outcomeExplanation =
-        'El estudio diagnóstico completó la caracterización molecular al cierre de las rondas.';
+        'El estudio completó la caracterización del tumor al cierre de las rondas.';
     }
   }
 
-  const whatHappened = `${findingDetail} Durante el estudio no se aplicó carga tóxica adicional (efectos secundarios ${nextClinical.cumulativeToxicity}%). En la siguiente ronda podrás elegir una intervención dirigida con esta información.`;
+  const whatHappened = `${findingDetail} Este estudio no añade toxicidad (${nextClinical.cumulativeToxicity}/100). Usa este hallazgo para orientar la intervención de la siguiente ronda.`;
 
   const resolution: TurnResolution = {
     roundNumber: state.currentRound,
@@ -2032,8 +2032,8 @@ export function resolveOncologistObservationTurn(
   if (isLastRound) {
     if (state.unlimitedMode && nextLiberation >= 100) {
       outcomeCode = 'remision_simulada';
-      outcomeTitle = '100% de liberación alcanzado · Remisión consolidada';
-      outcomeExplanation = `Tras ${state.currentRound} rondas combinando diagnóstico, intervención y pausas de observación clínica, consolidaste el 100% de liberación preservando los tejidos sanos.`;
+      outcomeTitle = 'Control tumoral consolidado · Progreso al 100%';
+      outcomeExplanation = `Tras ${state.currentRound} rondas combinando estudios, intervenciones y pausas de observación, consolidaste el control tumoral protegiendo los tejidos sanos.`;
     } else {
       outcomeCode = nextClinical.tumorBurden <= 32 ? 'control_sostenido' : 'enfermedad_activa';
       outcomeTitle =
@@ -2047,7 +2047,7 @@ export function resolveOncologistObservationTurn(
 
   const dominantAfter = normalizedClones.reduce((a, b) => (b.share > a.share ? b : a));
   const burdenChange = nextClinical.tumorBurden - state.clinical.tumorBurden;
-  const whatHappened = `Se saltó la ronda de ${skippedPhaseLabel} bajo observación clínica. Sin presión farmacológica, los tejidos sanos se recuperaron (efectos secundarios ${nextClinical.cumulativeToxicity}%, vigilancia inmune reforzada) y la tasa tumoral varió en ${burdenChange >= 0 ? '+' : ''}${burdenChange}%, manteniendo a ${dominantAfter.name} (${dominantAfter.share}%) como población dominante.${naturalMutationNote}`;
+  const whatHappened = `Se omitió la ronda de ${skippedPhaseLabel} para mantener observación clínica. Sin presión farmacológica, los tejidos sanos se recuperaron (toxicidad acumulada ${nextClinical.cumulativeToxicity}/100, vigilancia inmune reforzada) y la carga tumoral cambió en ${burdenChange >= 0 ? '+' : ''}${burdenChange} pts, con ${dominantAfter.name} (${dominantAfter.share}% de la población) como grupo dominante.${naturalMutationNote}`;
 
   const resolution: TurnResolution = {
     roundNumber: state.currentRound,

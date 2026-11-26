@@ -85,14 +85,14 @@ export function computeDestinationProgress(state: SimulationState): DestinationS
         progress,
         stage,
         stageLabel,
-        destinationTitle: 'Alcanzar 100% de cáncer',
+        destinationTitle: 'Carga tumoral máxima',
         destinationSubtitle:
-          'Recorre el laberinto acumulando alteraciones hasta llegar al 100% de cáncer.',
+          'Mide el avance de la carga tumoral (0 a 100) a medida que la célula supera barreras del tejido.',
         isReached: progress >= 100,
         breakdown: [
-          { label: 'Tasa de cáncer', value: burdenScore },
-          { label: 'Liberación de frenos', value: controlLiberation },
-          { label: 'Colonización de recursos', value: resourceColonization },
+          { label: 'Carga tumoral', value: burdenScore },
+          { label: 'Pérdida de frenos celulares', value: controlLiberation },
+          { label: 'Acceso a recursos y expansión', value: resourceColonization },
         ],
       };
     }
@@ -159,13 +159,13 @@ export function computeDestinationProgress(state: SimulationState): DestinationS
       progress,
       stage,
       stageLabel,
-      destinationTitle: 'Alcanzar 100% de liberación',
+      destinationTitle: 'Control tumoral completo',
       destinationSubtitle:
-        'Recorre el laberinto erradicando clones y protegiendo al paciente hasta alcanzar el 100% de liberación.',
+        'Progreso de la partida (0 a 100%) combinando respuesta del tumor, baja toxicidad y preservación del paciente.',
       isReached: progress >= 100,
       breakdown: [
-        { label: 'Reducción tumoral', value: tumorClearance },
-        { label: 'Salud y baja toxicidad', value: bodyIntegrity },
+        { label: 'Reducción de la carga tumoral', value: tumorClearance },
+        { label: 'Bienestar y baja toxicidad', value: bodyIntegrity },
         { label: 'Defensas del organismo', value: hostDefenseSupport },
       ],
     };

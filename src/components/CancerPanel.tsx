@@ -13,6 +13,7 @@ import { GENES_LIBRARY } from '../engine/knowledgeBase';
 import {
   describeCurrentSituationSimple,
   formatBiologyText,
+  getCancerStrategyDisplayInfo,
   getGeneDisplayTitle,
 } from '../engine/molecularAbstraction';
 import {
@@ -208,13 +209,14 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
             {/* Step 2: Clonal Selection Choice */}
             <section className="space-y-2">
               <span className="block text-xs font-semibold text-slate-900 dark:text-white">
-                2. Bifurcación celular
+                2. Elige un cambio en la célula
               </span>
 
               <div className="space-y-2">
                 {round.cancerStrategies.map((opt) => {
                   const selected = activeStrategy === opt.id;
                   const clone = state.clones.find((c) => c.id === opt.cloneId);
+                  const display = getCancerStrategyDisplayInfo(opt, molecularDetail);
                   return (
                     <button
                       key={opt.id}
@@ -232,20 +234,23 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
-                          {formatBiologyText(opt.label, molecularDetail)}
+                          {display.title}
                         </span>
                         {clone && (
-                          <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-200 tabular-nums shrink-0">
-                            {clone.share}%
+                          <span className="font-mono text-[11px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums shrink-0 text-right">
+                            {clone.share}%{' '}
+                            <span className="font-sans font-normal text-[10px] text-slate-500 dark:text-slate-400">
+                              {molecularDetail === 'simple' ? 'de las células' : 'de la población'}
+                            </span>
                           </span>
                         )}
                       </div>
                       <div className="mt-1.5 space-y-0.5 text-[11px] leading-snug">
                         <div className="text-emerald-700 dark:text-emerald-400">
-                          + {formatBiologyText(opt.advantage, molecularDetail)}
+                          + {display.effect}
                         </div>
                         <div className="text-amber-700 dark:text-amber-400">
-                          − {formatBiologyText(opt.cost, molecularDetail)}
+                          − {display.cost}
                         </div>
                       </div>
                       {showHint && (
@@ -262,7 +267,7 @@ export const CancerPanel: React.FC<CancerPanelProps> = ({
             {/* Step 3: Prediction Gate */}
             <section className="space-y-2">
               <span className="block text-xs font-semibold text-slate-900 dark:text-white">
-                3. Predicción para abrir la puerta
+                3. ¿Qué esperas que ocurra con el cambio que elegiste?
               </span>
               <div className="space-y-1.5">
                 {shuffledPredictions.map((pred) => {

@@ -11,6 +11,7 @@ import {
   DoorOpen,
   Eye,
   Gamepad2,
+  HelpCircle,
   Lightbulb,
   Lock,
   Maximize2,
@@ -58,8 +59,10 @@ import {
 import {
   describeCurrentSituationSimple,
   formatBiologyText,
+  getCancerStrategyDisplayInfo,
   getDetailModeLabel,
   getDiagnosticDisplayInfo,
+  getOncologistFindingsSummary,
   getOncologistStageInfo,
   getTherapyDisplayInfo,
 } from '../engine/molecularAbstraction';
@@ -218,6 +221,31 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   const [webglRetryNonce, setWebglRetryNonce] = useState<number>(0);
   const [motionSensorActive, setMotionSensorActive] = useState<boolean>(false);
   const [showTouchPad, setShowTouchPad] = useState<boolean>(false);
+  const [isTouchDevice] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.matchMedia('(pointer: coarse)').matches ||
+      window.innerWidth < 768 ||
+      (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 && window.innerWidth < 900)
+    );
+  });
+  const [showControlsHint, setShowControlsHint] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.sessionStorage.getItem('cancer-labyrinth-3d-controls-seen-v1') !== '1';
+    } catch {
+      return true;
+    }
+  });
+
+  const dismissControlsHint = useCallback(() => {
+    setShowControlsHint(false);
+    try {
+      window.sessionStorage.setItem('cancer-labyrinth-3d-controls-seen-v1', '1');
+    } catch {
+      // Ignore storage access errors in restricted iframes
+    }
+  }, []);
 
   // Mobile DeviceOrientation motion sensor refs (zero React re-renders inside sensor events)
   const motionActiveRef = useRef<boolean>(false);
@@ -1576,19 +1604,26 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
 
   // Essential-only portal branch metadata for the confirmation drawer
   // Cancer mode keeps biological prediction gate; Oncologist mode advances directly through Diagnostic / Intervention choices!
+  const oncologistFindings = useMemo(
+    () => (state.mode === 'oncologist' ? getOncologistFindingsSummary(state, molecularDetail) : null),
+    [state, molecularDetail]
+  );
+
   const activePortalDetails = useMemo(() => {
     void doorOpenNonce;
     if (!selectedPortal || !currentRoundDef) return null;
     if (state.mode === 'cancer') {
       const strat = currentRoundDef.cancerStrategies.find((s) => s.id === selectedPortal.actionId);
       if (!strat) return null;
+      const display = getCancerStrategyDisplayInfo(strat, molecularDetail);
       return {
         requiresPrediction: true as const,
         kind: 'cancer' as const,
-        title: formatBiologyText(strat.label, molecularDetail),
-        summary: formatBiologyText(strat.advantage, molecularDetail),
+        title: display.title,
+        summary: display.effect,
         secondaryDetail: '',
-        costTag: formatBiologyText(`Costo: ${strat.cost}`, molecularDetail),
+        guidanceNote: '',
+        costTag: `Costo: ${display.cost}`,
         ctaLabel: 'Abrir puerta',
         predictions: shuffleRandom(currentRoundDef.cancerPredictions).map((p) => ({
           ...p,
@@ -1606,12 +1641,13 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         kind: 'diagnostic' as const,
         title: diagInfo.name,
         summary: diagInfo.summary,
-        secondaryDetail: diagInfo.revealsDescription,
+        secondaryDetail: '',
+        guidanceNote: '',
         costTag:
           molecularDetail === 'simple'
-            ? 'Ronda de estudio · No produce efectos secundarios'
-            : 'Fase de diagnóstico · Sin toxicidad farmacológica',
-        ctaLabel: molecularDetail === 'simple' ? 'Hacer este estudio' : 'Realizar diagnóstico',
+            ? 'Ronda de estudio · Sin desgaste al cuerpo'
+            : 'Ronda de estudio · Sin toxicidad',
+        ctaLabel: molecularDetail === 'simple' ? 'Hacer este estudio' : 'Realizar el estudio',
         predictions: [],
       };
     }
@@ -1625,14 +1661,15 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       title: therapyInfo.name,
       summary: therapyInfo.mechanism,
       secondaryDetail: therapyInfo.cloneEffectsSummary,
+      guidanceNote: oncologistFindings?.interventionGuidance ?? '',
       costTag:
         molecularDetail === 'simple'
           ? `Desgaste al cuerpo ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`
-          : `Efectos secundarios ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`,
+          : `Toxicidad ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`,
       ctaLabel: molecularDetail === 'simple' ? 'Aplicar tratamiento' : 'Aplicar intervención',
       predictions: [],
     };
-  }, [selectedPortal, doorOpenNonce, currentRoundDef, state.mode, molecularDetail]);
+  }, [selectedPortal, doorOpenNonce, currentRoundDef, state.mode, molecularDetail, oncologistFindings]);
 
   const activeDoorLock =
     selectedPortal && doorLockState?.portalId === selectedPortal.id ? doorLockState : null;
@@ -1890,9 +1927,9 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           </div>
         )}
 
-        <div className="w-[248px] sm:w-[282px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 space-y-1.5">
-          <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <div className="w-[228px] sm:w-[282px] bg-slate-950/92 border border-slate-700/90 rounded-lg px-2.5 sm:px-3 py-2 text-slate-100 space-y-1.5">
+          <div className="flex items-center justify-between gap-1.5 text-[10px] sm:text-[11px] font-mono text-slate-400">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap min-w-0 truncate">
               {state.mode === 'oncologist' ? (
                 oncologistPhase === 'diagnostic' ? (
                   <Microscope className="w-3.5 h-3.5 shrink-0 text-cyan-400" aria-hidden="true" />
@@ -1902,8 +1939,9 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
               ) : (
                 <Compass className="w-3.5 h-3.5 shrink-0 text-rose-400" aria-hidden="true" />
               )}
-              <span>
-                Ronda {state.currentRound}
+              <span className="truncate">
+                <span className="sm:hidden">R{state.currentRound}</span>
+                <span className="hidden sm:inline">Ronda {state.currentRound}</span>
                 {state.mode === 'oncologist' &&
                   ` · ${
                     oncologistPhase === 'diagnostic'
@@ -1918,8 +1956,8 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             </span>
             <span className="text-slate-200 font-semibold tabular-nums whitespace-nowrap shrink-0">
               {state.mode === 'cancer'
-                ? `Cáncer ${destination.progress}%`
-                : `Liberación ${destination.progress}%`}
+                ? `Carga ${state.clinical.tumorBurden}/100`
+                : `Progreso ${destination.progress}%`}
             </span>
           </div>
           <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -1940,13 +1978,9 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             <span className="font-semibold text-white truncate">
               {state.mode === 'oncologist'
                 ? `${getOncologistStageInfo(state.oncologistStartStage ?? 'early', molecularDetail).label} · ${
-                    oncologistPhase === 'diagnostic'
-                      ? molecularDetail === 'simple'
-                        ? 'Estudiar'
-                        : 'Diagnóstico'
-                      : molecularDetail === 'simple'
-                        ? 'Tratar'
-                        : 'Intervención'
+                    state.revealedExtent
+                      ? state.clinical.diseaseExtent
+                      : 'Extensión: Sin definir'
                   }`
                 : theme.phaseLabel}
             </span>
@@ -1965,7 +1999,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
                 style={{ backgroundColor: severity.accentCss }}
                 aria-hidden="true"
               />
-              <span>Gravedad: {severity.shortLabel}</span>
+              <span>Carga: {severity.shortLabel}</span>
             </span>
             <span className="inline-flex items-center gap-1 font-mono text-[10px] text-slate-400 tabular-nums shrink-0">
               <Activity
@@ -2017,7 +2051,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       {/* Top-Right Live 2D Architectural Minimap */}
       <div
         aria-label="Minimapa del laberinto"
-        className="absolute top-3 right-3 bg-slate-950/92 border border-slate-700/90 rounded-lg p-1.5"
+        className="absolute top-3 right-3 bg-slate-950/92 border border-slate-700/90 rounded-lg p-1.5 scale-75 origin-top-right sm:scale-100"
       >
         <svg width={mapWidth} height={mapHeight} viewBox={`0 0 ${mapWidth} ${mapHeight}`}>
           {/* Walkable corridors & chambers */}
@@ -2122,6 +2156,12 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
               {activePortalDetails.secondaryDetail}
             </p>
           )}
+          {activePortalDetails.guidanceNote && (
+            <p className="mt-2 rounded-md border border-sky-500/40 bg-sky-950/60 px-2.5 py-1.5 text-[11px] text-sky-200 leading-snug">
+              <strong className="text-sky-300">Según tus hallazgos:</strong>{' '}
+              {activePortalDetails.guidanceNote}
+            </p>
+          )}
           <div className="mt-1.5 text-[11px] font-mono text-slate-400">
             {activePortalDetails.costTag}
           </div>
@@ -2130,7 +2170,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           {activePortalDetails.requiresPrediction && (
             <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-1.5">
               <div className="text-[11px] font-semibold text-slate-300">
-                Predicción para abrir la puerta
+                ¿Qué esperas que ocurra con el cambio que elegiste?
               </div>
               <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                 {activePortalDetails.predictions.map((pred) => {
@@ -2209,6 +2249,54 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             >
               <span>{activePortalDetails.ctaLabel}</span>
               <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* First-Entry Device-Aware Controls Overlay (shown once on entering 3D Labyrinth) */}
+      {showControlsHint && !selectedPortal && !webglUnavailable && !state.finished && (
+        <div
+          role="dialog"
+          aria-label="Controles del laberinto 3D"
+          data-testid="labyrinth-controls-onboarding"
+          data-device-kind={isTouchDevice ? 'mobile' : 'desktop'}
+          className="absolute bottom-16 left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:w-[400px] z-20 bg-slate-950/95 border border-sky-500/70 rounded-xl p-4 text-slate-100 space-y-2.5 shadow-xl"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-bold text-white">
+              {isTouchDevice ? 'Cómo moverte en móvil' : 'Cómo moverte en el laberinto 3D'}
+            </h3>
+            <button
+              type="button"
+              onClick={dismissControlsHint}
+              aria-label="Cerrar controles"
+              className="p-0.5 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {isTouchDevice ? (
+            <ul className="space-y-1 text-xs text-slate-300 leading-relaxed">
+              <li>• Desliza el dedo en la pantalla para girar la vista.</li>
+              <li>• Activa Sensor para avanzar inclinando el teléfono, o abre las flechas en pantalla.</li>
+              <li>• Toca cualquier puerta para ver la decisión de esta ronda.</li>
+            </ul>
+          ) : (
+            <ul className="space-y-1 text-xs text-slate-300 leading-relaxed">
+              <li>• Usa las teclas de dirección (↑ ↓ ← →) o WASD para caminar y girar.</li>
+              <li>• Arrastra con el mouse para mirar alrededor y haz clic en una puerta para abrirla.</li>
+              <li>• Pulsa V para cambiar la cámara y + / − para acercar o alejar el zoom.</li>
+            </ul>
+          )}
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              data-testid="dismiss-controls-onboarding-btn"
+              onClick={dismissControlsHint}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white cursor-pointer"
+            >
+              Entendido
             </button>
           </div>
         </div>
@@ -2443,6 +2531,20 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             ) : (
               <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
             )}
+          </button>
+
+          <button
+            type="button"
+            data-testid="labyrinth-controls-help-btn"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setShowControlsHint((prev) => !prev);
+            }}
+            aria-label="Mostrar controles del laberinto"
+            className="p-1 rounded hover:bg-slate-800 cursor-pointer text-slate-300 hover:text-white"
+            title="Ver controles"
+          >
+            <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
 
           {onToggleExpand && (

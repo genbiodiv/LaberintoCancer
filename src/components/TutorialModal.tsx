@@ -1,55 +1,78 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  Compass,
+  FileText,
   GitCompareArrows,
   Layers,
-  Microscope,
   X,
 } from 'lucide-react';
+import { PlayMode } from '../engine/types';
 
 interface TutorialModalProps {
   open: boolean;
+  playMode: PlayMode;
   onClose: () => void;
 }
 
-const SLIDES = [
+const SHARED_SLIDES = [
   {
     icon: GitCompareArrows,
-    title: '1. Dos roles, misma biología',
-    body: 'Cáncer y Oncólogo operan sobre el mismo motor molecular.',
+    title: '1. Dos rutas sobre la misma biología',
+    body: 'Cáncer y Oncólogo funcionan con las mismas reglas celulares y moleculares.',
     points: [
-      'Cáncer: supera barreras fisiológicas del organismo hasta llegar al 100% de cáncer.',
-      'Oncólogo: alterna rondas de diagnóstico e intervención (o salta en observación) hasta el 100% de liberación.',
+      'Como cáncer: eliges cambios que ayudan a las células tumorales a crecer, evadir frenos y sobrevivir.',
+      'Como oncólogo: alternas rondas de estudio e intervención (o eliges observar) para controlar el tumor cuidando al paciente.',
     ],
   },
   {
     icon: Layers,
-    title: '2. Selección clonal',
-    body: 'Las variantes surgen por alteraciones celulares; las barreras biológicas (o las terapias en modo Oncólogo) seleccionan qué clones crecen.',
+    title: '2. Selección entre poblaciones celulares',
+    body: 'Las alteraciones crean grupos de células con ventajas y costos distintos.',
     points: [
-      'Cada decisión muestra de inmediato sus ramificaciones moleculares, clonales y clínicas.',
-      'En modo Oncólogo puedes pulsar Observación en cualquier ronda para descansar y ver la evolución natural.',
-    ],
-  },
-  {
-    icon: Microscope,
-    title: '3. Cómo avanzar y moverte',
-    body: 'Recorre el laberinto de forma continua hasta completar el objetivo de tu rol.',
-    points: [
-      'En computador usa las flechas de dirección (↑ ↓ ← →) o WASD para caminar y girar; en móvil activa el botón Sensor para inclinar tu dispositivo.',
-      'Acércate o toca una puerta del laberinto para abrirla y ver el impacto en las poblaciones celulares.',
-      'Usa el zoom (+ / − o rueda del ratón) y observa cómo el entorno y el latido reflejan la gravedad del cáncer.',
+      'Antes de elegir, compara qué cambia en la célula o qué pregunta responde cada estudio.',
+      'Después de cada elección verás qué ocurrió con las poblaciones celulares, las capacidades del cáncer y el estado del tejido.',
     ],
   },
 ];
 
-export const TutorialModal: React.FC<TutorialModalProps> = ({ open, onClose }) => {
+const TEXT_MODE_SLIDE = {
+  icon: FileText,
+  title: '3. Cómo jugar en Modo Texto',
+  body: 'Todas las decisiones y resultados están organizados en tres columnas.',
+  points: [
+    'Panel izquierdo: elige el cambio celular, el estudio o la intervención de la ronda actual.',
+    'Panel central: consulta la red de procesos (haz clic en cualquier nodo para ver su función) o cambia a la pestaña de población clonal.',
+    'Panel derecho: sigue la carga tumoral, el progreso de la partida, las defensas del tejido y las capacidades del cáncer.',
+  ],
+};
+
+const LABYRINTH_MODE_SLIDE = {
+  icon: Compass,
+  title: '3. Cómo moverte en el Laberinto 3D',
+  body: 'Cada cámara presenta tres puertas iluminadas que corresponden a tus decisiones de la ronda.',
+  points: [
+    'En computador: usa las flechas ↑ ↓ ← → o WASD para avanzar y girar, arrastra para mirar y usa + / − o la rueda para zoom.',
+    'En móvil: activa el botón Sensor para inclinar el dispositivo, usa el pad en pantalla si prefieres botones, o arrastra para mirar.',
+    'Acércate o toca una puerta para leer sus detalles y confirmar tu decisión.',
+  ],
+};
+
+export const TutorialModal: React.FC<TutorialModalProps> = ({ open, playMode, onClose }) => {
   const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    if (open) setStep(0);
+  }, [open, playMode]);
 
   if (!open) return null;
 
-  const slide = SLIDES[step];
+  const slides = [
+    ...SHARED_SLIDES,
+    playMode === 'text' ? TEXT_MODE_SLIDE : LABYRINTH_MODE_SLIDE,
+  ];
+  const slide = slides[Math.min(step, slides.length - 1)];
   const Icon = slide.icon;
 
   return (
@@ -70,14 +93,15 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ open, onClose }) =
                 {slide.title}
               </h2>
               <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
-                Paso {step + 1} de {SLIDES.length}
+                Paso {step + 1} de {slides.length} ·{' '}
+                {playMode === 'text' ? 'Modo Texto' : 'Laberinto 3D'}
               </span>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar tutorial"
+            aria-label="Cerrar guía"
             className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -89,7 +113,9 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ open, onClose }) =
         <ul className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
           {slide.points.map((pt, idx) => (
             <li key={idx} className="flex items-start gap-2">
-              <span className="font-mono text-sky-600 dark:text-sky-400 font-semibold mt-0.5">·</span>
+              <span className="font-mono text-sky-600 dark:text-sky-400 font-semibold mt-0.5">
+                ·
+              </span>
               <span>{pt}</span>
             </li>
           ))}
@@ -106,7 +132,7 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ open, onClose }) =
             Anterior
           </button>
 
-          {step < SLIDES.length - 1 ? (
+          {step < slides.length - 1 ? (
             <button
               type="button"
               onClick={() => setStep((s) => s + 1)}

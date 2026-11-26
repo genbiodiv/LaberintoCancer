@@ -13,6 +13,7 @@ import {
   describeCurrentSituationSimple,
   formatBiologyText,
   getDiagnosticDisplayInfo,
+  getOncologistFindingsSummary,
   getOncologistStageInfo,
   getTherapyDisplayInfo,
 } from '../engine/molecularAbstraction';
@@ -55,6 +56,7 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
   const fmt = (text: string) => formatBiologyText(text, molecularDetail);
   const isSimple = molecularDetail === 'simple';
   const stageInfo = getOncologistStageInfo(state.oncologistStartStage ?? 'early', molecularDetail);
+  const findings = getOncologistFindingsSummary(state, molecularDetail);
 
   if (state.finished) {
     return (
@@ -124,7 +126,7 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
         <h2 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
           {isDiagnosticPhase
             ? isSimple
-              ? 'Elige un examen para conocer el tumor'
+              ? 'Elige un estudio para conocer el tumor'
               : 'Elige un estudio diagnóstico'
             : isSimple
               ? 'Elige cómo tratar al paciente'
@@ -164,118 +166,143 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
             </strong>
           </span>
           <span>
-            {isSimple ? 'Exámenes:' : 'Estudios:'}{' '}
+            Estudios:{' '}
             <strong className="text-slate-800 dark:text-slate-100 tabular-nums">
               {state.completedDiagnostics.length}
             </strong>
           </span>
           <span>
-            {isSimple ? 'Desgaste:' : 'Efectos sec.:'}{' '}
+            {isSimple ? 'Desgaste:' : 'Toxicidad:'}{' '}
             <strong className="text-slate-800 dark:text-slate-100 tabular-nums">
-              {state.clinical.cumulativeToxicity}%
+              {state.clinical.cumulativeToxicity}/100
             </strong>
           </span>
         </div>
       </div>
 
       {/* Main Decision Cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-        {isDiagnosticPhase ? (
-          <>
-            {offeredDiagnostics.map((tool) => {
-              const isSelected = selectedDiagnosticId === tool.id;
-              const doneBefore = state.completedDiagnostics.includes(tool.id);
-              const diag = getDiagnosticDisplayInfo(tool, molecularDetail);
-              return (
-                <button
-                  key={tool.id}
-                  type="button"
-                  data-testid={`diag-option-${tool.id}`}
-                  onClick={() => setSelectedDiagnosticId(tool.id)}
-                  className={`w-full text-left p-3.5 rounded-lg border transition-all duration-150 cursor-pointer space-y-1.5 ${
-                    isSelected
-                      ? 'border-cyan-600 dark:border-cyan-400 bg-cyan-50/50 dark:bg-cyan-950/50 ring-1 ring-cyan-600 dark:ring-cyan-400'
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
-                      {diag.name}
-                    </span>
-                    {doneBefore && (
-                      <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1 shrink-0">
-                        <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-                        Previo
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Known Findings Summary (always separates what is known vs what remains to discover) */}
+        <div
+          data-testid="oncologist-known-findings"
+          className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 p-3 space-y-1.5"
+        >
+          <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">
+            Lo que ya sabes
+          </div>
+          <ul className="space-y-1 text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+            {findings.items.map((item) => (
+              <li key={item.label}>
+                <strong className="text-slate-800 dark:text-slate-100">{item.label}:</strong>{' '}
+                {item.value}
+              </li>
+            ))}
+          </ul>
+          {!isDiagnosticPhase && (
+            <div
+              data-testid="oncologist-intervention-guidance"
+              className="mt-2 pt-2 border-t border-slate-200/80 dark:border-slate-700 text-[11px] text-sky-900 dark:text-sky-200 leading-snug"
+            >
+              <strong className="text-sky-800 dark:text-sky-300">
+                Cómo orienta tu decisión:
+              </strong>{' '}
+              {findings.interventionGuidance}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2.5">
+          {isDiagnosticPhase ? (
+            <>
+              {offeredDiagnostics.map((tool) => {
+                const isSelected = selectedDiagnosticId === tool.id;
+                const doneBefore = state.completedDiagnostics.includes(tool.id);
+                const diag = getDiagnosticDisplayInfo(tool, molecularDetail);
+                return (
+                  <button
+                    key={tool.id}
+                    type="button"
+                    data-testid={`diag-option-${tool.id}`}
+                    onClick={() => setSelectedDiagnosticId(tool.id)}
+                    className={`w-full text-left p-3.5 rounded-lg border transition-all duration-150 cursor-pointer space-y-1.5 ${
+                      isSelected
+                        ? 'border-cyan-600 dark:border-cyan-400 bg-cyan-50/50 dark:bg-cyan-950/50 ring-1 ring-cyan-600 dark:ring-cyan-400'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
+                        {diag.name}
                       </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                    {diag.summary}
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    <strong className="text-slate-700 dark:text-slate-200">
-                      {isSimple ? '¿Qué descubre?' : 'Revela:'}
-                    </strong>{' '}
-                    {diag.revealsDescription}
-                  </p>
-                </button>
-              );
-            })}
-          </>
-        ) : (
-          <>
-            {offeredTherapies.map((therapy) => {
-              const isSelected = selectedTherapyId === therapy.id;
-              const info = getTherapyDisplayInfo(therapy, molecularDetail);
-              const toxLabel = isSimple
-                ? therapy.toxicityDelta <= 0
-                  ? 'Alivia desgaste'
-                  : `Desgaste +${therapy.toxicityDelta}`
-                : therapy.toxicityDelta < 0
-                  ? `Efectos ${therapy.toxicityDelta}`
-                  : `Efectos +${therapy.toxicityDelta}`;
-              return (
-                <button
-                  key={therapy.id}
-                  type="button"
-                  data-testid={`therapy-option-${therapy.id}`}
-                  onClick={() => setSelectedTherapyId(therapy.id)}
-                  className={`w-full text-left p-3.5 rounded-lg border transition-all duration-150 cursor-pointer space-y-1.5 ${
-                    isSelected
-                      ? 'border-sky-600 dark:border-sky-400 bg-sky-50/50 dark:bg-sky-950/50 ring-1 ring-sky-600 dark:ring-sky-400'
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
-                      {info.name}
-                    </span>
-                    <span
-                      className={`text-[11px] font-mono shrink-0 ${
-                        therapy.toxicityDelta <= 0
-                          ? 'text-emerald-700 dark:text-emerald-400'
-                          : therapy.toxicityDelta >= 24
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : 'text-slate-500 dark:text-slate-400'
-                      }`}
-                    >
-                      {toxLabel}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                    {info.mechanism}
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    <strong className="text-slate-700 dark:text-slate-200">
-                      {isSimple ? '¿Cómo actúa?' : 'Efecto celular:'}
-                    </strong>{' '}
-                    {info.cloneEffectsSummary}
-                  </p>
-                </button>
-              );
-            })}
-          </>
-        )}
+                      {doneBefore && (
+                        <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1 shrink-0">
+                          <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          Realizado
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      {diag.summary}
+                    </p>
+                  </button>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              {offeredTherapies.map((therapy) => {
+                const isSelected = selectedTherapyId === therapy.id;
+                const info = getTherapyDisplayInfo(therapy, molecularDetail);
+                const toxLabel = isSimple
+                  ? therapy.toxicityDelta <= 0
+                    ? 'Alivia desgaste'
+                    : `Desgaste +${therapy.toxicityDelta}`
+                  : therapy.toxicityDelta < 0
+                    ? `Toxicidad ${therapy.toxicityDelta}`
+                    : `Toxicidad +${therapy.toxicityDelta}`;
+                return (
+                  <button
+                    key={therapy.id}
+                    type="button"
+                    data-testid={`therapy-option-${therapy.id}`}
+                    onClick={() => setSelectedTherapyId(therapy.id)}
+                    className={`w-full text-left p-3.5 rounded-lg border transition-all duration-150 cursor-pointer space-y-1.5 ${
+                      isSelected
+                        ? 'border-sky-600 dark:border-sky-400 bg-sky-50/50 dark:bg-sky-950/50 ring-1 ring-sky-600 dark:ring-sky-400'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
+                        {info.name}
+                      </span>
+                      <span
+                        className={`text-[11px] font-mono shrink-0 ${
+                          therapy.toxicityDelta <= 0
+                            ? 'text-emerald-700 dark:text-emerald-400'
+                            : therapy.toxicityDelta >= 24
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {toxLabel}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                      {info.mechanism}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      <strong className="text-slate-700 dark:text-slate-200">
+                        {isSimple ? 'Qué esperar:' : 'Efecto esperado:'}
+                      </strong>{' '}
+                      {info.cloneEffectsSummary}
+                    </p>
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Action Footer: Primary Decision + Always-Available Observation Skip */}
@@ -296,8 +323,8 @@ export const OncologistPanel: React.FC<OncologistPanelProps> = ({
           <span>
             {isDiagnosticPhase
               ? isSimple
-                ? 'Hacer este examen'
-                : 'Realizar diagnóstico'
+                ? 'Hacer este estudio'
+                : 'Realizar el estudio'
               : isSimple
                 ? 'Aplicar este tratamiento'
                 : 'Aplicar intervención'}

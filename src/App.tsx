@@ -80,7 +80,7 @@ export default function App() {
   // Lobby & global configuration state (unified start, unlimited-only progression)
   const [theme, setTheme] = useState<ThemeMode>(() => loadThemeMode());
   const [playMode, setPlayMode] = useState<PlayMode>('labyrinth');
-  const [molecularDetail, setMolecularDetail] = useState<MolecularDetailMode>('logic');
+  const [molecularDetail, setMolecularDetail] = useState<MolecularDetailMode>('simple');
   const [oncologistStartStage, setOncologistStartStage] =
     useState<OncologistStartStage>('early');
 
@@ -315,6 +315,7 @@ export default function App() {
     setSession(null);
     saveActiveSession(null);
     setPendingResolution(null);
+    setMolecularDetail('simple');
     setView('start');
   };
 
@@ -636,7 +637,11 @@ export default function App() {
         />
       )}
 
-      <TutorialModal open={tutorialOpen} onClose={() => setTutorialOpen(false)} />
+      <TutorialModal
+        open={tutorialOpen}
+        playMode={playMode}
+        onClose={() => setTutorialOpen(false)}
+      />
 
       <TeacherModal
         open={teacherOpen}

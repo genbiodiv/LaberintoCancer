@@ -281,11 +281,11 @@ export function buildLabyrinthLayout(
             const cloneTag = clone
               ? detail === 'precision'
                 ? s.problemMutation
-                  ? `${s.problemMutation.precisionLabel} · ${clone.share}%`
-                  : `${clone.shortTag} · ${clone.share}%`
+                  ? `${s.problemMutation.precisionLabel} · ${clone.share}% del tumor`
+                  : `${clone.shortTag} · ${clone.share}% del tumor`
                 : detail === 'simple'
-                  ? `Grupo ${idx + 1} · ${clone.share}%`
-                  : `Clon ${idx + 1} · ${clone.share}%`
+                  ? `${clone.share}% de las células`
+                  : `${clone.share}% de la población`
               : s.originNote;
             return {
               actionId: s.id,
@@ -342,9 +342,11 @@ export function buildLabyrinthLayout(
                 sublabel:
                   detail === 'simple'
                     ? rule.toxicityDelta <= 0
-                      ? 'Cuerpo descansa'
+                      ? 'Alivia desgaste'
                       : `Desgaste +${rule.toxicityDelta}`
-                    : `Tox ${rule.toxicityDelta >= 0 ? '+' : ''}${rule.toxicityDelta}`,
+                    : rule.toxicityDelta <= 0
+                      ? `Toxicidad ${rule.toxicityDelta}`
+                      : `Toxicidad +${rule.toxicityDelta}`,
                 accentHex: palette.hex,
                 accentCss: palette.css,
               };

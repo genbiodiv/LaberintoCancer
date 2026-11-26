@@ -80,41 +80,43 @@ export const StartScreen: React.FC<StartScreenProps> = ({
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#0b1220] dark:text-slate-100 flex flex-col transition-colors">
       {/* Clean Top Bar (Teacher Mode is intentionally hidden behind 5x 'h') */}
       <header className="w-full border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/90 transition-colors">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between gap-4 sm:gap-8">
-          <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
-            <Dna className="w-5 h-5 text-rose-600 dark:text-rose-500" aria-hidden="true" />
-            <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
+        <div className="max-w-5xl mx-auto px-3.5 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-8">
+          <div className="flex items-center gap-2 whitespace-nowrap min-w-0">
+            <Dna className="w-4 h-4 sm:w-5 sm:h-5 text-rose-600 dark:text-rose-500 shrink-0" aria-hidden="true" />
+            <span className="text-sm sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white truncate">
               El laberinto del cáncer
             </span>
           </div>
 
-          <nav className="flex items-center gap-3 sm:gap-5 text-sm font-medium text-slate-600 dark:text-slate-300">
+          <nav className="flex items-center gap-2 sm:gap-5 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 shrink-0">
             <button
               type="button"
               onClick={onOpenSplash}
               className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              Instrucciones
+              Portada
             </button>
             <button
               type="button"
               onClick={onOpenTutorial}
+              aria-label="Guía"
               className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
             >
               <BookOpen className="w-4 h-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Tutorial</span>
+              <span className="hidden sm:inline">Guía</span>
             </button>
             {canCompare && (
               <button
                 type="button"
                 onClick={onOpenComparison}
+                aria-label="Comparar roles"
                 className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <GitCompareArrows className="w-4 h-4" aria-hidden="true" />
                 <span className="hidden md:inline">Comparar roles</span>
               </button>
             )}
-            <ThemeToggle theme={theme} onChange={onThemeChange} />
+            <ThemeToggle theme={theme} onChange={onThemeChange} variant="compact" />
           </nav>
         </div>
       </header>
@@ -122,14 +124,13 @@ export const StartScreen: React.FC<StartScreenProps> = ({
       {/* Main Content: Clean Student Launch Experience */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 sm:py-10 flex flex-col justify-center gap-7">
         {/* Title & Essential Subtitle */}
-        <section className="space-y-2 max-w-2xl">
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white [text-wrap:balance]">
-            El laberinto del cáncer
+        <section className="space-y-1.5 max-w-2xl">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white [text-wrap:balance]">
+            Elige tu ruta
           </h1>
-          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed">
-            {molecularDetail === 'simple'
-              ? 'Elige tu papel y avanza por el laberinto tomando decisiones paso a paso para entender cómo crece el cáncer o cómo se enfrenta.'
-              : 'Elige tu rol y recorre el laberinto tomando decisiones biológicas paso a paso hasta alcanzar el objetivo final.'}
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            Selecciona el formato, el nivel de lenguaje y el rol con el que quieres explorar la
+            simulación.
           </p>
         </section>
 
@@ -177,49 +178,53 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 role="group"
                 aria-label="Nivel de lenguaje y detalle"
                 data-testid="detail-mode-group"
-                className="inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg h-10"
+                className="grid grid-cols-3 sm:inline-flex w-full sm:w-auto items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg min-h-10"
               >
                 <button
                   type="button"
                   data-testid="detail-simple-btn"
                   aria-pressed={molecularDetail === 'simple'}
                   onClick={() => onMolecularDetailChange('simple')}
-                  className={`px-3 h-full rounded-md text-xs font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  className={`px-2 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
                     molecularDetail === 'simple'
                       ? 'bg-white dark:bg-slate-950 text-emerald-700 dark:text-emerald-400 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  <Lightbulb className="w-3.5 h-3.5" aria-hidden="true" />
-                  Simple
+                  <Lightbulb className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>Simple</span>
                 </button>
                 <button
                   type="button"
                   data-testid="detail-logic-btn"
                   aria-pressed={molecularDetail === 'logic'}
                   onClick={() => onMolecularDetailChange('logic')}
-                  className={`px-3 h-full rounded-md text-xs font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  className={`px-2 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
                     molecularDetail === 'logic'
                       ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  <Cpu className="w-3.5 h-3.5" aria-hidden="true" />
-                  Lógica molecular
+                  <Cpu className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    Lógica<span className="hidden sm:inline"> molecular</span>
+                  </span>
                 </button>
                 <button
                   type="button"
                   data-testid="detail-precision-btn"
                   aria-pressed={molecularDetail === 'precision'}
                   onClick={() => onMolecularDetailChange('precision')}
-                  className={`px-3 h-full rounded-md text-xs font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  className={`px-2 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
                     molecularDetail === 'precision'
                       ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  <Microscope className="w-3.5 h-3.5" aria-hidden="true" />
-                  Precisión molecular
+                  <Microscope className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    Precisión<span className="hidden sm:inline"> molecular</span>
+                  </span>
                 </button>
               </div>
             </div>
@@ -258,25 +263,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                   Jugar como el cáncer
                 </h2>
                 <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                  {molecularDetail === 'simple' ? (
-                    <>
-                      Empieza desde una célula inicial y descubre cómo el tumor supera los frenos y
-                      defensas del cuerpo hasta llegar al{' '}
-                      <strong className="font-semibold text-slate-800 dark:text-white">
-                        100% de cáncer
-                      </strong>
-                      .
-                    </>
-                  ) : (
-                    <>
-                      Supera las barreras naturales del organismo acumulando alteraciones en el
-                      laberinto hasta alcanzar el{' '}
-                      <strong className="font-semibold text-slate-800 dark:text-white">
-                        100% de cáncer
-                      </strong>
-                      .
-                    </>
-                  )}
+                  {molecularDetail === 'simple'
+                    ? 'Empieza desde una célula inicial y elige qué cambios le permiten seguir creciendo y evadir las defensas del tejido.'
+                    : 'Explora qué cambios en señalización, ciclo celular y supervivencia permiten que las células tumorales superen las barreras del tejido.'}
                 </p>
               </div>
             </div>
@@ -306,25 +295,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     Jugar como oncólogo
                   </h2>
                   <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                    {molecularDetail === 'simple' ? (
-                      <>
-                        Alterna turnos para estudiar el tumor y elegir tratamientos —o decide
-                        observar— hasta alcanzar el{' '}
-                        <strong className="font-semibold text-slate-800 dark:text-white">
-                          100% de liberación
-                        </strong>
-                        .
-                      </>
-                    ) : (
-                      <>
-                        Alterna rondas de diagnóstico e intervención —o salta en observación en
-                        cualquier momento— y explora sus ramificaciones celulares hasta el{' '}
-                        <strong className="font-semibold text-slate-800 dark:text-white">
-                          100% de liberación
-                        </strong>
-                        .
-                      </>
-                    )}
+                    {molecularDetail === 'simple'
+                      ? 'Alterna turnos para estudiar el tumor y elegir tratamientos —o decide observar— cuidando el bienestar del paciente.'
+                      : 'Alterna rondas de estudio e intervención —u observa cuando convenga— para controlar el tumor sin comprometer al paciente.'}
                   </p>
                 </div>
               </div>
@@ -336,7 +309,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     Punto de partida clínico
                   </span>
                   <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                    Tumor inicial: {activeStageInfo.burdenPreview}
+                    Carga inicial: {activeStageInfo.burdenPreview}
                   </span>
                 </div>
 
