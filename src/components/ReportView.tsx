@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import {
   ArrowLeft,
   ChevronRight,
+  Compass,
   GitCompareArrows,
   Repeat,
   RotateCcw,
@@ -21,6 +22,7 @@ interface ReportViewProps {
   onSwitchPerspective: () => void;
   onOpenComparison: () => void;
   onBackHome: () => void;
+  onBackToLabyrinth?: () => void;
   onRestartSame: () => void;
 }
 
@@ -31,6 +33,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   onSwitchPerspective,
   onOpenComparison,
   onBackHome,
+  onBackToLabyrinth,
   onRestartSame,
 }) => {
   const oppositeModeLabel = state.mode === 'cancer' ? 'Oncólogo' : 'Cáncer';
@@ -75,14 +78,27 @@ export const ReportView: React.FC<ReportViewProps> = ({
       {/* Top Bar */}
       <header className="w-full border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/80">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
-          <button
-            type="button"
-            onClick={onBackHome}
-            className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-            Volver al inicio
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={onBackHome}
+              className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+              Volver al inicio
+            </button>
+            {onBackToLabyrinth && (
+              <button
+                type="button"
+                data-testid="report-back-to-labyrinth-btn"
+                onClick={onBackToLabyrinth}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 hover:bg-sky-100 dark:hover:bg-sky-900/70 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+              >
+                <Compass className="w-3.5 h-3.5" aria-hidden="true" />
+                Volver al laberinto
+              </button>
+            )}
+          </div>
 
           <div className="text-xs font-mono text-slate-500 dark:text-slate-400 truncate">
             {state.mode === 'cancer'

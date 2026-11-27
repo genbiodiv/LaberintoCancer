@@ -8,6 +8,7 @@ import {
   ArrowUp,
   DoorOpen,
   Eye,
+  Flag,
   Gamepad2,
   HelpCircle,
   Lightbulb,
@@ -59,14 +60,22 @@ import {
   getDetailModeLabel,
   getDiagnosticDisplayInfo,
   getOncologistFindingsSummary,
+  getOncologistPredictionLabel,
   getTherapyDisplayInfo,
 } from '../engine/molecularAbstraction';
+import {
+  computeThirdPersonCameraPose,
+  computeWalkingCameraMotion,
+  cycleLabyrinthCameraMode,
+  getCameraModeLabel,
+} from '../engine/labyrinthCamera';
 import {
   combineControlInputs,
   computeKeyboardControlInput,
   computeMotionControlInput,
   createMotionCalibration,
   DEFAULT_MOTION_SENSOR_SETTINGS,
+  LabyrinthCameraMode,
   MotionCalibration,
   MotionSensorSettings,
   normalizeDirectionKey,
@@ -107,6 +116,13 @@ import {
   ProceduralTexturePack,
   TotemRig,
 } from './labyrinth3d/sceneAssets';
+import {
+  animatePlayerAvatar,
+  createPlayerAvatarGroup,
+  createSummarySignalGroup,
+  PlayerAvatarRig,
+  SummarySignalRig,
+} from './labyrinth3d/playerAvatars';
 
 interface Labyrinth3DViewProps {
   state: SimulationState;
@@ -118,6 +134,7 @@ interface Labyrinth3DViewProps {
   onToggleExpand?: () => void;
   onBackHome?: () => void;
   onSwitchToText?: () => void;
+  onOpenSummary?: () => void;
   onResolveCancerTurn: (strategyId: string, predictionId: string) => void;
   onResolveOncologistTurn: (therapyId: TherapyId, predictionId: string) => void;
   onResolveOncologistDiagnostic: (toolId: DiagnosticToolId) => void;
@@ -125,7 +142,7 @@ interface Labyrinth3DViewProps {
   onRunDiagnostic?: (toolId: DiagnosticToolId) => string | null;
 }
 
-type CameraMode = 'first_person' | 'aerial';
+type CameraMode = LabyrinthCameraMode;
 
 interface ParticleSlot {
   active: boolean;
@@ -190,6 +207,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   onToggleExpand,
   onBackHome,
   onSwitchToText,
+  onOpenSummary,
   onResolveCancerTurn,
   onResolveOncologistTurn,
   onResolveOncologistDiagnostic,
@@ -202,7 +220,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   const didInitialBuildRef = useRef<boolean>(false);
   const virtualKeysRef = useRef<Set<string>>(new Set());
 
-  const [cameraMode, setCameraMode] = useState<CameraMode>('first_person');
+  const [cameraMode, setCameraMode] = useState<CameraMode>('third_person');
   const [zoomLevel, setZoomLevel] = useState<number>(LABYRINTH_ZOOM_DEFAULT);
   const [resolutionLevel, setResolutionLevel] = useState<LabyrinthResolutionLevel>('high');
   const [renderBufferDims, setRenderBufferDims] = useState<{ w: number; h: number }>({
@@ -354,12 +372,17 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   const onRunDiagnosticRef = useRef(onRunDiagnostic);
   onRunDiagnosticRef.current = onRunDiagnostic;
 
-  // Player kinematic ref (world position + orientation)
+  const onOpenSummaryRef = useRef(onOpenSummary);
+  onOpenSummaryRef.current = onOpenSummary;
+
+  // Player kinematic ref (world position + orientation + smooth walking motion)
   const playerRef = useRef({
     x: layout.spawn.x,
     z: layout.spawn.z,
     yaw: layout.spawn.yaw,
     bobPhase: 0,
+    walkIntensity: 0,
+    turnRate: 0,
     stepAccum: 0,
     lastNearPortalId: null as string | null,
     roundKey: `${state.runId}-${state.mode}-${state.currentRound}`,
@@ -371,6 +394,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
     worldGroup: THREE.Group;
+    playerAvatar: PlayerAvatarRig | null;
     hemi: THREE.HemisphereLight;
     keyLight: THREE.DirectionalLight;
     headlamp: THREE.PointLight;
@@ -379,6 +403,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     totemRigs: TotemRig[];
     diagnosticRigs: DiagnosticRig[];
     beaconRig: DestinationBeaconRig | null;
+    summarySignalRig: SummarySignalRig | null;
     bioGrowthRig: BioGrowthRig | null;
     interactables: THREE.Object3D[];
     particlesMesh: THREE.InstancedMesh;
@@ -789,16 +814,51 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       );
       ctx.worldGroup.add(beaconRig.group);
 
+      // 7b. Interactive Post-Game Summary Signal Pedestal (appears once the run finishes)
+      let summarySignalRig: SummarySignalRig | null = null;
+      if (nextLayout.summaryBeacon) {
+        summarySignalRig = createSummarySignalGroup(
+          nextLayout.summaryBeacon.x,
+          nextLayout.summaryBeacon.z,
+          nextMode,
+          highDetailTextures,
+          maxAniso
+        );
+        summarySignalRig.group.traverse((child) => {
+          if ((child as THREE.Sprite).isSprite) {
+            const mat = (child as THREE.Sprite).material;
+            if (mat.map) mat.map.userData.ownedBySprite = true;
+          }
+        });
+        ctx.worldGroup.add(summarySignalRig.group);
+        interactables.push(summarySignalRig.hitbox);
+      }
+
       // 8. Severity-driven organic tumorous nodules anchored along chamber corners & wall bases
       const bioGrowthRig = createSeverityBioGrowths(nextLayout.chambers, nextSeverity);
       if (bioGrowthRig) {
         ctx.worldGroup.add(bioGrowthRig.mesh);
       }
 
+      // 9. Persistent Role-Specific 3D Player Avatar (Cancer Cell Cluster vs. Oncologist Doctor)
+      if (!ctx.playerAvatar || ctx.playerAvatar.mode !== nextMode) {
+        if (ctx.playerAvatar) {
+          disposeObjectTree(ctx.playerAvatar.root);
+          ctx.scene.remove(ctx.playerAvatar.root);
+        }
+        const avatarRig = createPlayerAvatarGroup(nextMode);
+        avatarRig.root.position.set(playerRef.current.x, 0, playerRef.current.z);
+        avatarRig.root.rotation.y = playerRef.current.yaw;
+        avatarRig.root.visible = cameraModeRef.current !== 'first_person';
+        ctx.scene.add(avatarRig.root);
+        ctx.playerAvatar = avatarRig;
+      }
+
       ctx.portalRigs = portalRigs;
       ctx.totemRigs = totemRigs;
       ctx.diagnosticRigs = diagnosticRigs;
       ctx.beaconRig = beaconRig;
+      ctx.summarySignalRig = summarySignalRig;
       ctx.bioGrowthRig = bioGrowthRig;
       ctx.interactables = interactables;
     },
@@ -889,10 +949,18 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     // Focus stage container cleanly so desktop arrow keys respond immediately inside iframes
     stageRef.current?.focus({ preventScroll: true });
 
-    // Camera positioned at spawn looking straight north (-Z) toward the glowing forking portals
+    // Camera positioned at spawn (3rd-person trailing view by default) facing straight north (-Z)
     const camera = new THREE.PerspectiveCamera(64, 16 / 9, 0.1, 140);
-    camera.position.set(layoutRef.current.spawn.x, 1.65, layoutRef.current.spawn.z);
-    camera.lookAt(layoutRef.current.spawn.x, 1.55, layoutRef.current.spawn.z - 8);
+    const initThirdPerson = computeThirdPersonCameraPose(
+      layoutRef.current.spawn.x,
+      layoutRef.current.spawn.z,
+      layoutRef.current.spawn.yaw,
+      zoomLevelRef.current,
+      layoutRef.current.walkableBoxes,
+      { bobY: 0, swayX: 0, rollZ: 0, pitchBob: 0 }
+    );
+    camera.position.set(initThirdPerson.camX, initThirdPerson.camY, initThirdPerson.camZ);
+    camera.lookAt(initThirdPerson.lookX, initThirdPerson.lookY, initThirdPerson.lookZ);
 
     // Warm key + cool hemisphere + subtle fill + dynamic explorer headlamp
     const hemi = new THREE.HemisphereLight(0xdbeafe, 0x2c243a, 1.65);
@@ -1030,6 +1098,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       scene,
       camera,
       worldGroup,
+      playerAvatar: null,
       hemi,
       keyLight,
       headlamp,
@@ -1038,6 +1107,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       totemRigs: [],
       diagnosticRigs: [],
       beaconRig: null,
+      summarySignalRig: null,
       bioGrowthRig: null,
       interactables: [],
       particlesMesh,
@@ -1101,7 +1171,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           e.preventDefault();
         }
       } else if (e.code === 'KeyV') {
-        setCameraMode((prev) => (prev === 'first_person' ? 'aerial' : 'first_person'));
+        setCameraMode((prev) => cycleLabyrinthCameraMode(prev));
       } else if (e.code === 'KeyM') {
         setMuted((prev) => !prev);
       } else if (e.code === 'Escape') {
@@ -1181,7 +1251,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         lastPointerX = e.clientX;
         lastPointerY = e.clientY;
         if (dragMoved && !selectedPortalRef.current) {
-          if (cameraModeRef.current === 'first_person') {
+          if (cameraModeRef.current !== 'aerial') {
             playerRef.current.yaw -= dx * 0.0045;
             // On touchscreens, dragging vertically also glides smoothly forward/backward
             if (e.pointerType === 'touch' && Math.abs(dy) > 0.5) {
@@ -1216,9 +1286,12 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         );
         setHoveredLabel(st ? `Terminal: ${st.label}` : null);
         canvas.style.cursor = 'pointer';
+      } else if (hit?.userData?.kind === 'summary') {
+        setHoveredLabel('Ver resumen de cierre del juego');
+        canvas.style.cursor = 'pointer';
       } else {
         setHoveredLabel(null);
-        canvas.style.cursor = cameraModeRef.current === 'first_person' ? 'grab' : 'default';
+        canvas.style.cursor = cameraModeRef.current !== 'aerial' ? 'grab' : 'default';
       }
     };
 
@@ -1261,6 +1334,13 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         if (msg) {
           setDiagToast(msg);
         }
+      } else if (hit.userData?.kind === 'summary') {
+        const sb = layoutRef.current.summaryBeacon;
+        if (sb) {
+          threeRef.current?.spawnBurst(sb.x, 1.8, sb.z, 0xf59e0b);
+        }
+        audioRef.current?.playPortalFocus(0.2);
+        onOpenSummaryRef.current?.();
       }
     };
 
@@ -1368,14 +1448,17 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         if (Math.abs(ctrl.turnDelta) > 0.001) {
           p.yaw += ctrl.turnDelta * turnSpeed * dt;
         }
+        const turnDamp = 1 - Math.exp(-8.0 * dt);
+        p.turnRate += (ctrl.turnDelta - p.turnRate) * turnDamp;
 
         const speed = 5.4;
         const mag = Math.hypot(ctrl.moveForward, ctrl.moveRight);
+        let movedThisFrame = false;
         if (mag > 0.001) {
           const clampedMag = Math.min(1, mag);
           const nf = (ctrl.moveForward / mag) * clampedMag;
           const nr = (ctrl.moveRight / mag) * clampedMag;
-          // In aerial view, movement follows world cardinal axes; in 1st-person, relative to yaw
+          // In aerial view, movement follows world cardinal axes; in 1st/3rd-person, relative to yaw
           const refYaw = cameraModeRef.current === 'aerial' ? 0 : p.yaw;
           const fwdX = -Math.sin(refYaw);
           const fwdZ = -Math.cos(refYaw);
@@ -1391,7 +1474,8 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           p.z = resolved.z;
 
           if (movedDist > 0.002) {
-            p.bobPhase += movedDist * 2.5;
+            movedThisFrame = true;
+            p.bobPhase += movedDist * 2.85;
             p.stepAccum += movedDist;
             if (p.stepAccum >= 2.1) {
               p.stepAccum = 0;
@@ -1413,16 +1497,45 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           }
         }
 
-        // 2. Smooth exponential camera damping between 1st-Person and Aerial Map modes
+        // Smooth walking intensity ramp so head-bob, sway, and limb cycles start & settle naturally
+        const targetWalk = movedThisFrame ? Math.min(1, mag) : 0;
+        const walkDamp = 1 - Math.exp(-(movedThisFrame ? 11.0 : 7.5) * dt);
+        p.walkIntensity += (targetWalk - p.walkIntensity) * walkDamp;
+
+        // 2. Smooth exponential camera damping across 3rd-Person, 1st-Person, and Aerial Map modes
         const damp = 1 - Math.exp(-8.5 * dt);
+        const camMotion = computeWalkingCameraMotion(
+          p.bobPhase,
+          p.walkIntensity,
+          p.turnRate,
+          elapsed,
+          cameraModeRef.current
+        );
+
         if (cameraModeRef.current === 'first_person') {
-          const bobY = Math.sin(p.bobPhase) * 0.045;
-          _camTargetPos.set(p.x, 1.65 + bobY, p.z);
-          _camLookAt.set(
-            p.x - Math.sin(p.yaw) * 6,
-            1.58 + bobY * 0.5,
-            p.z - Math.cos(p.yaw) * 6
+          const rightX = Math.cos(p.yaw);
+          const rightZ = -Math.sin(p.yaw);
+          _camTargetPos.set(
+            p.x + rightX * camMotion.swayX,
+            1.65 + camMotion.bobY,
+            p.z + rightZ * camMotion.swayX
           );
+          _camLookAt.set(
+            p.x - Math.sin(p.yaw) * 6 + rightX * (camMotion.swayX * 0.4),
+            1.58 + camMotion.bobY * 0.45 + camMotion.pitchBob,
+            p.z - Math.cos(p.yaw) * 6 + rightZ * (camMotion.swayX * 0.4)
+          );
+        } else if (cameraModeRef.current === 'third_person') {
+          const tp = computeThirdPersonCameraPose(
+            p.x,
+            p.z,
+            p.yaw,
+            zoomLevelRef.current,
+            curLayout.walkableBoxes,
+            camMotion
+          );
+          _camTargetPos.set(tp.camX, tp.camY, tp.camZ);
+          _camLookAt.set(tp.lookX, tp.lookY, tp.lookZ);
         } else {
           // Elevated architectural view of the entire branching labyrinth
           const centerX = (curLayout.bounds.minX + curLayout.bounds.maxX) / 2;
@@ -1437,8 +1550,11 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         ctx.camera.position.lerp(_camTargetPos, damp);
         _currLookAt.lerp(_camLookAt, damp);
         ctx.camera.lookAt(_currLookAt);
+        if (Math.abs(camMotion.rollZ) > 0.0004) {
+          ctx.camera.rotateZ(camMotion.rollZ);
+        }
 
-        // Smooth optical FOV zoom damping (1st-person zoom & smooth reset in aerial view)
+        // Smooth optical FOV zoom damping (1st/3rd-person zoom & smooth reset in aerial view)
         const targetFov = computeLabyrinthCameraFov(zoomLevelRef.current, cameraModeRef.current);
         if (Math.abs(ctx.camera.fov - targetFov) > 0.02) {
           ctx.camera.fov += (targetFov - ctx.camera.fov) * damp;
@@ -1447,6 +1563,26 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
 
         // Headlamp glides softly with the explorer & pulses with biological heartbeat as severity rises
         const sev = severityRef.current;
+
+        // Update & animate composite 3D player avatar (visible in 3rd-person & aerial views)
+        if (ctx.playerAvatar) {
+          const showAvatar = cameraModeRef.current !== 'first_person';
+          ctx.playerAvatar.root.visible = showAvatar;
+          if (showAvatar) {
+            ctx.playerAvatar.root.position.set(p.x, 0, p.z);
+            ctx.playerAvatar.root.rotation.y = p.yaw;
+            const avatarScale = cameraModeRef.current === 'aerial' ? 1.38 : 1.0;
+            ctx.playerAvatar.root.scale.setScalar(avatarScale);
+            animatePlayerAvatar(
+              ctx.playerAvatar,
+              elapsed,
+              p.bobPhase,
+              p.walkIntensity,
+              p.turnRate,
+              sev
+            );
+          }
+        }
         const beatHz = sev.heartbeatBpm / 60;
         const beatPhase = (elapsed * beatHz) % 1;
         const beatPulse =
@@ -1485,6 +1621,15 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
           ctx.beaconRig.core.rotation.y += dt * (0.7 + sev.normalized * 0.7);
           ctx.beaconRig.ringOuter.rotation.z += dt * 0.45;
           ctx.beaconRig.ringInner.rotation.z -= dt * 0.6;
+        }
+
+        if (ctx.summarySignalRig) {
+          ctx.summarySignalRig.crown.rotation.y += dt * 1.35;
+          ctx.summarySignalRig.crown.position.y = 1.68 + Math.sin(elapsed * 2.4) * 0.1;
+          ctx.summarySignalRig.ring.rotation.z += dt * 0.9;
+          ctx.summarySignalRig.ring.position.y = ctx.summarySignalRig.crown.position.y;
+          const beamMat = ctx.summarySignalRig.beam.material as THREE.MeshBasicMaterial;
+          beamMat.opacity = 0.2 + Math.sin(elapsed * 2.6) * 0.08;
         }
 
         // Organic tumorous nodules breathe & pulse in sync with severity heartbeat
@@ -1601,6 +1746,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
 
       disposeObjectTree(worldGroup);
+      if (threeRef.current?.playerAvatar) {
+        disposeObjectTree(threeRef.current.playerAvatar.root);
+        scene.remove(threeRef.current.playerAvatar.root);
+      }
       if (threeRef.current?.textures) {
         threeRef.current.textures.dispose();
       }
@@ -1639,7 +1788,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
   }, [resolutionLevel, isExpanded]);
 
   // Essential-only portal branch metadata for the confirmation drawer
-  // Cancer mode keeps biological prediction gate; Oncologist mode advances directly through Diagnostic / Intervention choices!
+  // Cancer decisions and Oncologist intervention doors both include randomized biological predictions.
   const oncologistFindings = useMemo(
     () => (state.mode === 'oncologist' ? getOncologistFindingsSummary(state, molecularDetail) : null),
     [state, molecularDetail]
@@ -1661,6 +1810,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         guidanceNote: '',
         costTag: `Costo: ${display.cost}`,
         ctaLabel: 'Abrir puerta',
+        predictionPrompt: '¿Qué esperas que ocurra con el cambio que elegiste?',
         predictions: shuffleRandom(currentRoundDef.cancerPredictions).map((p) => ({
           ...p,
           label: formatBiologyText(p.label, molecularDetail),
@@ -1684,6 +1834,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             ? 'Ronda de estudio · Sin desgaste al cuerpo'
             : 'Ronda de estudio · Sin toxicidad',
         ctaLabel: molecularDetail === 'simple' ? 'Hacer este estudio' : 'Realizar el estudio',
+        predictionPrompt: '',
         predictions: [],
       };
     }
@@ -1692,18 +1843,25 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
     if (!therapy) return null;
     const therapyInfo = getTherapyDisplayInfo(therapy, molecularDetail);
     return {
-      requiresPrediction: false as const,
+      requiresPrediction: true as const,
       kind: 'intervention' as const,
       title: therapyInfo.name,
       summary: therapyInfo.mechanism,
-      secondaryDetail: therapyInfo.cloneEffectsSummary,
+      secondaryDetail: '',
       guidanceNote: oncologistFindings?.interventionGuidance ?? '',
       costTag:
         molecularDetail === 'simple'
           ? `Desgaste al cuerpo ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`
           : `Toxicidad ${therapy.toxicityDelta >= 0 ? '+' : ''}${therapy.toxicityDelta}`,
       ctaLabel: molecularDetail === 'simple' ? 'Aplicar tratamiento' : 'Aplicar intervención',
-      predictions: [],
+      predictionPrompt:
+        molecularDetail === 'simple'
+          ? '¿Qué esperas que pase con este tratamiento?'
+          : '¿Qué esperas que ocurra con esta intervención?',
+      predictions: shuffleRandom(currentRoundDef.oncologistPredictions ?? []).map((p) => ({
+        ...p,
+        label: getOncologistPredictionLabel(p, molecularDetail),
+      })),
     };
   }, [selectedPortal, doorOpenNonce, currentRoundDef, state.mode, molecularDetail, oncologistFindings]);
 
@@ -1742,10 +1900,28 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       threeRef.current?.spawnBurst(selectedPortal.x, 2.0, selectedPortal.z, selectedPortal.accentHex);
       onResolveOncologistDiagnostic(selectedPortal.actionId as DiagnosticToolId);
     } else {
+      if (!selectedPredictionId) return;
+      const gate = evaluatePredictionGate(state, selectedPortal.actionId, selectedPredictionId);
+      if (!gate.allowed) {
+        audioRef.current?.playDoorLocked();
+        threeRef.current?.spawnBurst(selectedPortal.x, 1.8, selectedPortal.z, 0xe11d48);
+        setDoorLockState((prev) => ({
+          portalId: selectedPortal.id,
+          feedback: formatBiologyText(gate.feedback, molecularDetail),
+          rejectedIds: Array.from(
+            new Set([
+              ...(prev?.portalId === selectedPortal.id ? prev.rejectedIds : []),
+              selectedPredictionId,
+            ])
+          ),
+        }));
+        return;
+      }
+
       audioRef.current?.ensureAmbientStarted();
       audioRef.current?.playBranchCross(state.clinical.tumorBurden, -12, 'oncologist');
       threeRef.current?.spawnBurst(selectedPortal.x, 2.0, selectedPortal.z, selectedPortal.accentHex);
-      onResolveOncologistTurn(selectedPortal.actionId as TherapyId, '');
+      onResolveOncologistTurn(selectedPortal.actionId as TherapyId, selectedPredictionId);
     }
 
     setDoorLockState(null);
@@ -1795,6 +1971,9 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
       data-cancer-burden={severity.burden}
       data-heartbeat-bpm={severity.heartbeatBpm}
       data-camera-mode={cameraMode}
+      data-avatar-mode={state.mode}
+      data-avatar-visible={cameraMode !== 'first_person' ? 'true' : 'false'}
+      data-finished={state.finished ? 'true' : 'false'}
       data-zoom-level={Math.round(zoomLevel * 100)}
       data-low-res={resolutionLevel === 'low' ? 'true' : 'false'}
       data-resolution-level={resolutionLevel}
@@ -1867,6 +2046,16 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              {state.finished && onOpenSummary && (
+                <button
+                  type="button"
+                  onClick={onOpenSummary}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Flag className="w-3.5 h-3.5" aria-hidden="true" />
+                  Ver resumen de cierre
+                </button>
+              )}
               {state.mode === 'oncologist' && !state.finished && (
                 <button
                   type="button"
@@ -1989,8 +2178,55 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         containerRef={stageRef}
       />
 
+      {/* Post-Game Exploration Signal Banner (keeps labyrinth open & guides player to closing summary) */}
+      {state.finished && !selectedPortal && onOpenSummary && (
+        <div
+          role="region"
+          aria-label="Recorrido completado"
+          data-testid="labyrinth-finished-signal"
+          className={`absolute top-14 left-3 right-28 sm:top-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-20 max-w-md rounded-xl border-2 px-3.5 py-2.5 bg-slate-950/96 shadow-lg flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 ${
+            state.mode === 'cancer'
+              ? 'border-amber-400/90 text-amber-50'
+              : 'border-emerald-400/90 text-emerald-50'
+          }`}
+        >
+          <div className="flex items-start gap-2 min-w-0">
+            <Flag
+              className={`w-4 h-4 shrink-0 mt-0.5 ${
+                state.mode === 'cancer' ? 'text-amber-400' : 'text-emerald-400'
+              }`}
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <div className="text-xs font-bold leading-tight text-white">
+                Recorrido finalizado
+              </div>
+              <p className="text-[11px] text-slate-300 leading-snug mt-0.5">
+                Camina por el laberinto para revisar tus decisiones o abre el informe final.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="labyrinth-open-summary-btn"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onOpenSummary();
+            }}
+            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+              state.mode === 'cancer'
+                ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                : 'bg-emerald-400 hover:bg-emerald-300 text-slate-950'
+            }`}
+          >
+            <span>Ver resumen de cierre</span>
+            <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
       {/* Hover Cue or Diagnostic / Sensor Toast (clears top buttons, minimap & bottom-left info panel) */}
-      {(diagToast || hoveredLabel) && !selectedPortal && (
+      {(diagToast || hoveredLabel) && !selectedPortal && !state.finished && (
         <div
           role={diagToast ? 'status' : undefined}
           className="pointer-events-none absolute top-14 left-3 right-28 sm:top-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:max-w-sm bg-slate-950/94 border border-sky-500/70 rounded-lg px-3.5 py-2 text-xs text-slate-100 text-center z-10"
@@ -2117,11 +2353,14 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             {activePortalDetails.costTag}
           </div>
 
-          {/* Prediction gate ONLY in Cancer Mode; Oncologist Mode resolves cleanly and directly */}
+          {/* Prediction gate for Cancer decisions and Oncologist intervention doors */}
           {activePortalDetails.requiresPrediction && (
-            <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-1.5">
+            <div
+              data-testid="portal-predictions-section"
+              className="mt-3 pt-2.5 border-t border-slate-800 space-y-1.5"
+            >
               <div className="text-[11px] font-semibold text-slate-300">
-                ¿Qué esperas que ocurra con el cambio que elegiste?
+                {activePortalDetails.predictionPrompt}
               </div>
               <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                 {activePortalDetails.predictions.map((pred) => {
@@ -2131,6 +2370,7 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
                     <button
                       key={pred.id}
                       type="button"
+                      data-testid={`portal-prediction-${pred.id}`}
                       onClick={() => setSelectedPredictionId(pred.id)}
                       className={`w-full text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors flex items-start justify-between gap-2 cursor-pointer ${
                         isSelected
@@ -2240,7 +2480,10 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
             <ul className="space-y-1 text-xs text-slate-300 leading-relaxed">
               <li>• Usa las teclas de dirección (↑ ↓ ← →) o WASD para caminar y girar.</li>
               <li>• Arrastra con el mouse para mirar alrededor y haz clic en una puerta para abrirla.</li>
-              <li>• Pulsa V para cambiar la cámara y + / − para acercar o alejar el zoom.</li>
+              <li>
+                • Pulsa V para alternar entre 3ª persona, 1ª persona y vista aérea, y + / − para el
+                zoom.
+              </li>
             </ul>
           )}
           <div className="flex justify-end pt-1">
@@ -2320,15 +2563,16 @@ export const Labyrinth3DView: React.FC<Labyrinth3DViewProps> = ({
         <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-0.5 max-w-full bg-slate-950/92 border border-slate-700/90 rounded-lg p-1 text-[11px] text-slate-200">
           <button
             type="button"
+            data-testid="camera-mode-btn"
             onClick={(e) => {
               e.currentTarget.blur();
-              setCameraMode((prev) => (prev === 'first_person' ? 'aerial' : 'first_person'));
+              setCameraMode((prev) => cycleLabyrinthCameraMode(prev));
             }}
             className="px-2 py-1 rounded hover:bg-slate-800 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
-            title="Cambiar cámara (tecla V)"
+            title="Cambiar cámara: 3ª persona, 1ª persona o aérea (tecla V)"
           >
             <Eye className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
-            <span>{cameraMode === 'first_person' ? 'Aérea' : '1ª Pers.'}</span>
+            <span>{getCameraModeLabel(cameraMode)}</span>
           </button>
 
           {/* Mobile Motion Sensor Toggle + Quick Recalibrate + On-Screen Arrow Pad Toggle */}

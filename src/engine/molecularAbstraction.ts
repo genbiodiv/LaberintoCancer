@@ -10,6 +10,7 @@ import {
   HallmarkId,
   MolecularDetailMode,
   OncologistStartStage,
+  PredictionOption,
   ScenarioId,
   SimulationState,
   TherapyId,
@@ -759,6 +760,7 @@ const SIMPLE_TEXT_REPLACEMENTS: [RegExp, string][] = [
   [/\bcarga tóxica\b/gi, 'desgaste por medicamentos'],
   [/\btoxicidad acumulada\b/gi, 'desgaste acumulado'],
   [/\btoxicidad sistémica\b/gi, 'desgaste en todo el cuerpo'],
+  [/\bla toxicidad\b/gi, 'el desgaste por tratamientos'],
   [/\btoxicidad\b/gi, 'desgaste por tratamientos'],
   [/\bbypass\b/gi, 'ruta alterna'],
   [/\btisulares\b/gi, 'de los tejidos'],
@@ -1219,6 +1221,40 @@ export function getCancerStrategyDisplayInfo(
     effect: formatBiologyText(strategy.advantage, detail),
     cost: formatBiologyText(strategy.cost, detail),
   };
+}
+
+const ONCOLOGIST_SIMPLE_PREDICTIONS: Partial<
+  Record<PredictionOption['expectedOutcomeTag'], string>
+> = {
+  therapy_response:
+    'Este tratamiento reducirá las células del tumor con un desgaste manejable para el cuerpo.',
+  resistant_outgrowth:
+    'Algunos grupos de células resistirán este tratamiento y seguirán creciendo.',
+  toxicity_limit:
+    'El desgaste en el cuerpo será el principal problema al aplicar o repetir este tratamiento.',
+  qol_preservation:
+    'Un manejo cuidadoso o de soporte preservará el bienestar del paciente y aliviará el desgaste.',
+  stable_control:
+    'Un tratamiento intenso eliminará todas las células del tumor sin producir efectos secundarios.',
+};
+
+export function getOncologistPredictionLabel(
+  prediction: PredictionOption,
+  detail: MolecularDetailMode
+): string {
+  if (detail === 'simple') {
+    if (prediction.isDistractor) {
+      return (
+        ONCOLOGIST_SIMPLE_PREDICTIONS.stable_control ??
+        formatBiologyText(prediction.label, 'simple')
+      );
+    }
+    return (
+      ONCOLOGIST_SIMPLE_PREDICTIONS[prediction.expectedOutcomeTag] ??
+      formatBiologyText(prediction.label, 'simple')
+    );
+  }
+  return formatBiologyText(prediction.label, detail);
 }
 
 export interface OncologistFindingItem {

@@ -185,7 +185,7 @@ export const LabyrinthInfoPanel: React.FC<LabyrinthInfoPanelProps> = ({
           title="Mostrar panel de información"
         >
           <Eye className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
-          <span>Info · R{state.currentRound}</span>
+          <span>{state.finished ? 'Info · Finalizado' : `Info · R${state.currentRound}`}</span>
         </button>
       </div>
     );
@@ -225,9 +225,16 @@ export const LabyrinthInfoPanel: React.FC<LabyrinthInfoPanelProps> = ({
             <Compass className="w-3.5 h-3.5 shrink-0 text-rose-400" aria-hidden="true" />
           )}
           <span className="truncate font-semibold text-slate-100">
-            <span className="sm:hidden">R{state.currentRound}</span>
-            <span className="hidden sm:inline">Ronda {state.currentRound}</span>
-            {state.mode === 'oncologist' &&
+            <span className="sm:hidden">
+              {state.finished ? 'Fin' : `R${state.currentRound}`}
+            </span>
+            <span className="hidden sm:inline">
+              {state.finished
+                ? `Ronda ${state.currentRound} · Finalizado`
+                : `Ronda ${state.currentRound}`}
+            </span>
+            {!state.finished &&
+              state.mode === 'oncologist' &&
               ` · ${
                 oncologistPhase === 'diagnostic'
                   ? molecularDetail === 'simple'

@@ -69,6 +69,7 @@ export interface LabyrinthLayout {
   walkableBoxes: WalkableBox[];
   walls: LabyrinthWallSegment[];
   diagnosticStations: LabyrinthDiagnosticStation[];
+  summaryBeacon: { x: number; z: number } | null;
   spawn: { x: number; z: number; yaw: number };
   currentChamberCenter: { x: number; z: number };
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -106,25 +107,29 @@ export function buildLabyrinthLayout(
   const endRound = state.unlimitedMode
     ? Math.max(1, state.currentRound)
     : Math.min(state.currentRound, state.maxRounds);
-  const startRound = state.unlimitedMode ? Math.max(1, endRound - 5) : 1;
+  const startRound = state.finished
+    ? Math.max(1, endRound - 14)
+    : state.unlimitedMode
+      ? Math.max(1, endRound - 5)
+      : 1;
 
   let currentX = 0;
   let currentZ = 0;
 
-  // Entry corridor leading into first rendered chamber (guarantees wide open spawn facing forward -Z)
+  // Entry corridor leading into first rendered chamber (wide open spawn + generous 3rd-person camera clearance)
   walkableBoxes.push({
     id: 'entry-corridor',
     minX: -CORRIDOR_WIDTH / 2,
     maxX: CORRIDOR_WIDTH / 2,
     minZ: -CHAMBER_DEPTH / 2,
-    maxZ: 10.5,
+    maxZ: 12.7,
   });
 
   // Entry corridor left/right/back walls
   walls.push(
-    { x: -CORRIDOR_WIDTH / 2 - WALL_THICKNESS / 2, z: 7.5, width: WALL_THICKNESS, depth: 6.5, height: WALL_HEIGHT },
-    { x: CORRIDOR_WIDTH / 2 + WALL_THICKNESS / 2, z: 7.5, width: WALL_THICKNESS, depth: 6.5, height: WALL_HEIGHT },
-    { x: 0, z: 10.9, width: CORRIDOR_WIDTH + WALL_THICKNESS * 2, depth: WALL_THICKNESS, height: WALL_HEIGHT }
+    { x: -CORRIDOR_WIDTH / 2 - WALL_THICKNESS / 2, z: 8.65, width: WALL_THICKNESS, depth: 8.8, height: WALL_HEIGHT },
+    { x: CORRIDOR_WIDTH / 2 + WALL_THICKNESS / 2, z: 8.65, width: WALL_THICKNESS, depth: 8.8, height: WALL_HEIGHT },
+    { x: 0, z: 13.1, width: CORRIDOR_WIDTH + WALL_THICKNESS * 2, depth: WALL_THICKNESS, height: WALL_HEIGHT }
   );
 
   for (let r = startRound; r <= endRound; r++) {
@@ -486,12 +491,20 @@ export function buildLabyrinthLayout(
     if (box.maxZ > maxZ) maxZ = box.maxZ;
   }
 
+  const summaryBeacon = state.finished
+    ? {
+        x: activeChamber.centerX,
+        z: activeChamber.centerZ - 1.8,
+      }
+    : null;
+
   return {
     chambers,
     portals,
     walkableBoxes,
     walls,
     diagnosticStations,
+    summaryBeacon,
     spawn,
     currentChamberCenter: { x: activeChamber.centerX, z: activeChamber.centerZ },
     bounds: {

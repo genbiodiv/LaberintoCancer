@@ -169,15 +169,19 @@ export default function App() {
 
     if (params.get('autostart') === '1') {
       const m = params.get('mode') === 'oncologist' ? 'oncologist' : 'cancer';
+      const testRoundsRaw = params.get('testRounds');
+      const parsedTestRounds = testRoundsRaw ? Number.parseInt(testRoundsRaw, 10) : NaN;
+      const useBoundedTestRounds =
+        Number.isFinite(parsedTestRounds) && parsedTestRounds >= 1 && parsedTestRounds <= 12;
       const fresh = createInitialSimulation(
         m,
         'UNIFIED',
         '',
         'quick',
         teacherConfig,
-        5,
+        useBoundedTestRounds ? parsedTestRounds : 5,
         undefined,
-        true,
+        !useBoundedTestRounds,
         resolvedStage
       );
       setSession(fresh);
@@ -216,7 +220,7 @@ export default function App() {
     if (!session) return;
     setPendingResolution(null);
     setStageTab(playMode === 'labyrinth' ? 'labyrinth' : 'network');
-    setView(session.finished ? 'report' : 'playing');
+    setView(session.finished && playMode !== 'labyrinth' ? 'report' : 'playing');
   };
 
   const handleCancerTurn = (strategyId: string, predictionId: string) => {
@@ -273,7 +277,7 @@ export default function App() {
 
   const handleContinueAfterFeedback = () => {
     setPendingResolution(null);
-    if (session?.finished) {
+    if (session?.finished && playMode !== 'labyrinth') {
       setView('report');
     }
   };
@@ -383,6 +387,7 @@ export default function App() {
             isExpanded={true}
             onBackHome={() => setView('start')}
             onSwitchToText={() => handlePlayModeChange('text')}
+            onOpenSummary={() => setView('report')}
             onResolveCancerTurn={handleCancerTurn}
             onResolveOncologistTurn={handleOncologistTurn}
             onResolveOncologistDiagnostic={handleOncologistDiagnostic}
@@ -393,8 +398,13 @@ export default function App() {
             resolution={pendingResolution}
             state={session}
             isFinished={session.finished}
+            allowExploreLabyrinth={true}
             molecularDetail={molecularDetail}
             onContinue={handleContinueAfterFeedback}
+            onOpenSummary={() => {
+              setPendingResolution(null);
+              setView('report');
+            }}
             onBackHome={() => {
               setPendingResolution(null);
               setView('start');
@@ -554,7 +564,9 @@ export default function App() {
                     state={session}
                     molecularDetail={molecularDetail}
                     onResolveDiagnostic={handleOncologistDiagnostic}
-                    onResolveIntervention={(therapyId) => handleOncologistTurn(therapyId, '')}
+                    onResolveIntervention={(therapyId, predictionId) =>
+                      handleOncologistTurn(therapyId, predictionId)
+                    }
                     onResolveObservation={handleOncologistObservation}
                   />
                 )}
@@ -625,6 +637,7 @@ export default function App() {
           onSwitchPerspective={handleSwitchPerspective}
           onOpenComparison={() => setView('compare')}
           onBackHome={() => setView('start')}
+          onBackToLabyrinth={playMode === 'labyrinth' ? () => setView('playing') : undefined}
           onRestartSame={() => handleStartMode(session.mode)}
         />
       )}

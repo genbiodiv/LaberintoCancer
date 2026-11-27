@@ -10,6 +10,7 @@ import {
   getHallmarkDisplayInfo,
   getModelFieldOptions,
   getOncologistFindingsSummary,
+  getOncologistPredictionLabel,
   getOncologistStageInfo,
   getScenarioDisplayInfo,
   getTherapyDisplayInfo,
@@ -921,6 +922,46 @@ test('Editorial & pedagogical copy guarantees: diagnostic questions, extent cohe
   for (const portal of cancerLayout.portals.filter((p) => p.status === 'active')) {
     assert.match(portal.sublabel, /población|células/i);
     assert.equal(/\bTox\b/i.test(portal.sublabel), false);
+  }
+});
+
+test('Oncologist intervention rounds always expose 5 predictions with clean 3-level labels and valid gate unlock/lock behavior', () => {
+  for (const stage of ['surveillance', 'early', 'advanced'] as const) {
+    const startState = createInitialSimulation('oncologist', 'UNIFIED', '', 'quick', undefined, 6, 4242, true, stage);
+    assert.equal(getOncologistRoundPhase(startState.currentRound), 'diagnostic');
+
+    const round2State = resolveOncologistObservationTurn(startState).nextState;
+    assert.equal(getOncologistRoundPhase(round2State.currentRound), 'intervention');
+
+    const offer = getActiveRoundOffer(round2State);
+    assert.ok(offer.oncologistPredictions.length === 5, `Stage ${stage} should have 5 oncologist predictions`);
+    assert.ok(offer.oncologistDoorTherapies.length >= 2, `Stage ${stage} should offer intervention therapies`);
+
+    for (const detail of ['simple', 'logic', 'precision'] as const) {
+      for (const pred of offer.oncologistPredictions) {
+        const label = getOncologistPredictionLabel(pred, detail);
+        assert.ok(label.trim().length > 10, `Empty prediction label for ${pred.id} in ${detail}`);
+        assert.equal(/\bla desgaste\b/i.test(label), false, `Gender mismatch in simple label: ${label}`);
+        if (detail !== 'precision') {
+          assert.equal(GENE_SYMBOL_REGEX.test(label), false, `Gene symbol leaked in ${detail}: ${label}`);
+        }
+      }
+    }
+
+    for (const therapyId of offer.oncologistDoorTherapies) {
+      let unlockCount = 0;
+      let lockCount = 0;
+      for (const pred of offer.oncologistPredictions) {
+        const gate = evaluatePredictionGate(round2State, therapyId, pred.id);
+        if (gate.allowed) {
+          unlockCount += 1;
+        } else {
+          lockCount += 1;
+        }
+      }
+      assert.ok(unlockCount >= 1, `Therapy ${therapyId} in stage ${stage} has no unlocking prediction`);
+      assert.ok(lockCount >= 1, `Therapy ${therapyId} in stage ${stage} has no locking distractor/mismatch`);
+    }
   }
 });
 

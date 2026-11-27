@@ -5,6 +5,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Compass,
+  Flag,
   Info,
   Lightbulb,
   TrendingDown,
@@ -23,7 +25,9 @@ interface TurnFeedbackModalProps {
   state: SimulationState | null;
   molecularDetail: MolecularDetailMode;
   isFinished: boolean;
+  allowExploreLabyrinth?: boolean;
   onContinue: () => void;
+  onOpenSummary?: () => void;
   onBackHome?: () => void;
 }
 
@@ -32,7 +36,9 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
   state,
   molecularDetail,
   isFinished,
+  allowExploreLabyrinth = false,
   onContinue,
+  onOpenSummary,
   onBackHome,
 }) => {
   const [showReferences, setShowReferences] = useState(false);
@@ -82,7 +88,9 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
                   ? 'text-emerald-700 dark:text-emerald-400'
                   : resolution.actionKind === 'diagnostic'
                     ? 'text-cyan-700 dark:text-cyan-400'
-                    : 'text-sky-700 dark:text-sky-400'
+                    : resolution.predictionMatched
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : 'text-sky-700 dark:text-sky-400'
               }`}
             >
               <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
@@ -91,7 +99,9 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
                   ? 'Estudio completado'
                   : resolution.actionKind === 'observation'
                     ? 'Observación clínica'
-                    : 'Intervención aplicada'}
+                    : resolution.predictionMatched
+                      ? 'Predicción correcta'
+                      : 'Intervención aplicada'}
               </span>
             </div>
           ) : (
@@ -407,8 +417,8 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
         </div>
 
         {/* Clean Action Footer */}
-        <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 flex items-center justify-end gap-2">
-          {isFinished && onBackHome && (
+        <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 flex flex-wrap items-center justify-end gap-2">
+          {isFinished && onBackHome && !allowExploreLabyrinth && (
             <button
               type="button"
               onClick={onBackHome}
@@ -417,14 +427,39 @@ export const TurnFeedbackModal: React.FC<TurnFeedbackModalProps> = ({
               Volver al inicio
             </button>
           )}
-          <button
-            type="button"
-            onClick={onContinue}
-            className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors inline-flex items-center gap-2 cursor-pointer"
-          >
-            <span>{isFinished ? 'Ver resumen completo' : `Siguiente ronda`}</span>
-            <ArrowRight className="w-4 h-4" aria-hidden="true" />
-          </button>
+          {isFinished && allowExploreLabyrinth ? (
+            <>
+              {onOpenSummary && (
+                <button
+                  type="button"
+                  data-testid="feedback-open-summary-btn"
+                  onClick={onOpenSummary}
+                  className="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Flag className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
+                  <span>Ver resumen ahora</span>
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="feedback-explore-labyrinth-btn"
+                onClick={onContinue}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Compass className="w-4 h-4" aria-hidden="true" />
+                <span>Revisar mi recorrido en el laberinto</span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onContinue}
+              className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 transition-colors inline-flex items-center gap-2 cursor-pointer"
+            >
+              <span>{isFinished ? 'Ver resumen completo' : `Siguiente ronda`}</span>
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -192,12 +192,15 @@ export function stepLabyrinthZoom(current: number, delta: -1 | 1): number {
 
 export function computeLabyrinthCameraFov(
   zoom: number,
-  cameraMode: 'first_person' | 'aerial'
+  cameraMode: 'third_person' | 'first_person' | 'aerial'
 ): number {
   if (cameraMode === 'aerial') {
     return LABYRINTH_BASE_FOV;
   }
   const safeZoom = clampLabyrinthZoom(zoom);
+  if (cameraMode === 'third_person') {
+    return Math.max(46, Math.min(76, LABYRINTH_BASE_FOV / Math.pow(safeZoom, 0.35)));
+  }
   return Math.max(32, Math.min(86, LABYRINTH_BASE_FOV / safeZoom));
 }
 

@@ -1,4 +1,4 @@
-export type LabyrinthCameraMode = 'first_person' | 'aerial';
+export type LabyrinthCameraMode = 'third_person' | 'first_person' | 'aerial';
 
 export interface MotionCalibration {
   beta: number; // front-to-back tilt baseline (deg)
@@ -119,7 +119,7 @@ export function computeKeyboardControlInput(
   if (heldKeys.has('KeyW') || heldKeys.has('ArrowUp')) moveForward += 1;
   if (heldKeys.has('KeyS') || heldKeys.has('ArrowDown')) moveForward -= 1;
 
-  if (cameraMode === 'first_person') {
+  if (cameraMode !== 'aerial') {
     if (heldKeys.has('KeyQ') || heldKeys.has('ArrowLeft')) turnDelta += 1;
     if (heldKeys.has('KeyE') || heldKeys.has('ArrowRight')) turnDelta -= 1;
     if (heldKeys.has('KeyD')) moveRight += 1;
@@ -236,7 +236,7 @@ export function computeMotionDiagnostics(
   const lateralAxis = applyDeadzoneCurve(rollDelta, rollDeadzone, rollMax);
 
   const input: ControlAxisInput =
-    cameraMode === 'first_person'
+    cameraMode !== 'aerial'
       ? {
           moveForward: forwardAxis,
           moveRight: 0,
